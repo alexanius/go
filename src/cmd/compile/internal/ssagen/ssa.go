@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"cmd/compile/internal/abi"
@@ -7604,7 +7605,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			if v, ok := progToValue[p]; ok {
 				s = v.String()
 			} else if b, ok := progToBlock[p]; ok {
-				s = b.String()
+				s = b.String() + " (" + strconv.FormatInt(b.Counter, 10) + ")"
 			} else {
 				s = "   " // most value and branch strings are 2-3 characters long
 			}
@@ -7630,7 +7631,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			if v, ok := progToValue[p]; ok {
 				buf.WriteString(v.HTML())
 			} else if b, ok := progToBlock[p]; ok {
-				buf.WriteString("<b>" + b.HTML() + "</b>")
+				buf.WriteString("<b>" + b.HTML()  + " (" + strconv.FormatInt(b.Counter, 10) + ")"+ "</b>")
 			}
 			buf.WriteString("</dt>")
 			buf.WriteString("<dd class=\"ssa-prog\">")

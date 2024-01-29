@@ -28,6 +28,7 @@ import (
 // for more useful panic messages when invalid methods are called,
 // instead of implementing Op itself.
 type miniNode struct {
+	counter int64
 	pos  src.XPos // uint32
 	op   Op       // uint8
 	bits bitset8
@@ -46,6 +47,8 @@ func (n *miniNode) posOr(pos src.XPos) src.XPos {
 // op can be read, but not written.
 // An embedding implementation can provide a SetOp if desired.
 // (The panicking SetOp is with the other panics below.)
+func (n *miniNode) Counter() int64     { return n.counter }
+func (n *miniNode) SetCounter(c int64) { n.counter = c }
 func (n *miniNode) Op() Op            { return n.op }
 func (n *miniNode) Pos() src.XPos     { return n.pos }
 func (n *miniNode) SetPos(x src.XPos) { n.pos = x }
