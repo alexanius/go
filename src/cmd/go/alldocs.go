@@ -220,6 +220,8 @@
 //		directory if that file exists, and applies it to the (transitive)
 //		dependencies of the main package (other packages are not affected).
 //		Special name "off" turns off PGO. The default is "auto".
+//	-bbpgo
+//		Enable loading basic block counters.
 //	-pkgdir dir
 //		install and load all packages from dir instead of the usual locations.
 //		For example, when building with a non-standard configuration,

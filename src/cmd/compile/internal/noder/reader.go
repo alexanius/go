@@ -1262,7 +1262,7 @@ func (r *reader) funcBody(fn *ir.Func) {
 
 		body := r.stmts()
 		if body == nil {
-			body = []ir.Node{typecheck.Stmt(ir.NewBlockStmt(src.NoXPos, nil))}
+			body = []ir.Node{typecheck.Stmt(ir.NewBlockStmt(src.NoXPos, 0, nil))}
 		}
 		fn.Body = body
 		fn.Endlineno = r.pos()
@@ -1591,7 +1591,7 @@ func block(stmts []ir.Node) ir.Node {
 	case 1:
 		return stmts[0]
 	default:
-		return ir.NewBlockStmt(stmts[0].Pos(), stmts)
+		return ir.NewBlockStmt(stmts[0].Pos(), stmts[0].Counter(), stmts)
 	}
 }
 
@@ -3566,7 +3566,7 @@ func (r *reader) inlReturn(ret *ir.ReturnStmt, retvars []*ir.Name) *ir.BlockStmt
 	}
 
 	block.Append(ir.NewBranchStmt(pos, ir.OGOTO, r.retlabel))
-	return ir.NewBlockStmt(pos, block)
+	return ir.NewBlockStmt(pos, r.inlCall.Counter(), block)
 }
 
 // expandInline reads in an extra copy of IR to populate

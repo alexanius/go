@@ -916,8 +916,9 @@ func FDumpList(w io.Writer, s string, list Nodes) {
 }
 
 // indent prints indentation to w.
-func indent(w io.Writer, depth int) {
+func indent(w io.Writer, depth int, counter int64) {
 	fmt.Fprint(w, "\n")
+	fmt.Fprintf(w, "%d ", counter)
 	for i := 0; i < depth; i++ {
 		fmt.Fprint(w, ".   ")
 	}
@@ -1049,7 +1050,7 @@ func dumpNodeHeader(w io.Writer, n Node) {
 }
 
 func dumpNode(w io.Writer, n Node, depth int) {
-	indent(w, depth)
+	indent(w, depth, n.Counter())
 	if depth > 40 {
 		fmt.Fprint(w, "...")
 		return
@@ -1063,7 +1064,7 @@ func dumpNode(w io.Writer, n Node, depth int) {
 	if len(n.Init()) != 0 {
 		fmt.Fprintf(w, "%+v-init", n.Op())
 		dumpNodes(w, n.Init(), depth+1)
-		indent(w, depth)
+		indent(w, depth, n.Counter())
 	}
 
 	switch n.Op() {
@@ -1116,21 +1117,21 @@ func dumpNode(w io.Writer, n Node, depth int) {
 		dumpNodeHeader(w, n)
 		fn := n
 		if len(fn.Dcl) > 0 {
-			indent(w, depth)
+			indent(w, depth, n.Counter())
 			fmt.Fprintf(w, "%+v-Dcl", n.Op())
 			for _, dcl := range n.Dcl {
 				dumpNode(w, dcl, depth+1)
 			}
 		}
 		if len(fn.ClosureVars) > 0 {
-			indent(w, depth)
+			indent(w, depth, n.Counter())
 			fmt.Fprintf(w, "%+v-ClosureVars", n.Op())
 			for _, cv := range fn.ClosureVars {
 				dumpNode(w, cv, depth+1)
 			}
 		}
 		if len(fn.Body) > 0 {
-			indent(w, depth)
+			indent(w, depth, n.Counter())
 			fmt.Fprintf(w, "%+v-body", n.Op())
 			dumpNodes(w, fn.Body, depth+1)
 		}
@@ -1164,7 +1165,7 @@ func dumpNode(w io.Writer, n Node, depth int) {
 		switch val := vf.Interface().(type) {
 		case Node:
 			if name != "" {
-				indent(w, depth)
+				indent(w, depth, n.Counter())
 				fmt.Fprintf(w, "%+v-%s", n.Op(), name)
 			}
 			dumpNode(w, val, depth+1)
@@ -1173,7 +1174,7 @@ func dumpNode(w io.Writer, n Node, depth int) {
 				continue
 			}
 			if name != "" {
-				indent(w, depth)
+				indent(w, depth, n.Counter())
 				fmt.Fprintf(w, "%+v-%s", n.Op(), name)
 			}
 			dumpNodes(w, val, depth+1)
@@ -1183,7 +1184,7 @@ func dumpNode(w io.Writer, n Node, depth int) {
 					continue
 				}
 				if name != "" {
-					indent(w, depth)
+					indent(w, depth, n.Counter())
 					fmt.Fprintf(w, "%+v-%s", n.Op(), name)
 				}
 				for i, n := 0, vf.Len(); i < n; i++ {

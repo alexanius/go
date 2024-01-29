@@ -15,6 +15,9 @@ type Block struct {
 	// these IDs densely, but no guarantees.
 	ID ID
 
+	// The profile counter for the block
+	Counter int64
+
 	// Source position for block's control operation
 	Pos src.XPos
 

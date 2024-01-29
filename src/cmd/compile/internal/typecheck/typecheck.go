@@ -536,7 +536,7 @@ func typecheck1(n ir.Node, top int) ir.Node {
 			// Empty identifier is valid but useless.
 			// Eliminate now to simplify life later.
 			// See issues 7538, 11589, 11593.
-			n = ir.NewBlockStmt(n.Pos(), nil)
+			n = ir.NewBlockStmt(n.Pos(), n.Counter(), nil)
 		}
 		return n
 

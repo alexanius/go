@@ -503,7 +503,12 @@ func orderStmtInPlace(n ir.Node, free map[string][]*ir.Name) ir.Node {
 	mark := order.markTemp()
 	order.stmt(n)
 	order.popTemp(mark)
-	return ir.NewBlockStmt(src.NoXPos, order.out)
+	var c int64
+	if n != nil {
+		c = n.Counter()
+	}
+	res := ir.NewBlockStmt(src.NoXPos, c, order.out)
+	return res
 }
 
 // init moves n's init list to o.out.

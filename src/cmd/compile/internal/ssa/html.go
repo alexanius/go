@@ -1203,7 +1203,7 @@ func (p htmlFuncPrinter) startBlock(b *Block, reachable bool) {
 		dead = "dead-block"
 	}
 	fmt.Fprintf(p.w, "<ul class=\"%s ssa-print-func %s\">", b, dead)
-	fmt.Fprintf(p.w, "<li class=\"ssa-start-block\">%s:", b.HTML())
+	fmt.Fprintf(p.w, "<li class=\"ssa-start-block\">%s (%d):", b.HTML(), b.Counter)
 	if len(b.Preds) > 0 {
 		io.WriteString(p.w, " &#8592;") // left arrow
 		for _, e := range b.Preds {

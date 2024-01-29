@@ -234,12 +234,546 @@ func processProto(r io.Reader) (*Profile, error) {
 	// Create package-level call graph with weights from profile and IR.
 	wg := createIRGraph(namedEdgeMap)
 
+	if base.Flag.BbPgoProfile {
+		// If option is enabled - load basic block counters from the profile
+
+		// Load counters from file
+		loadCounters(p)
+
+		// Propagate counters in AST
+		ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
+			for _, f := range list {
+				propagateCounters(f)
+			}
+		})
+	}
+
 	return &Profile{
 		TotalWeight:  totalWeight,
 		NamedEdgeMap: namedEdgeMap,
 		WeightedCG:   wg,
 	}, nil
 }
+
+// backPropNodeListCounterRec for all nodes in the list launch back propagation
+// returns the maximum value of the counter
+func backPropNodeListCounterRec(nodes ir.Nodes, depth int) int64 {
+	if nodes == nil {
+		return 0
+	}
+
+	var count int64
+
+	// Step 1: propagate counters and find maximum for this tree level
+	// TODO we should take in account that a subtree in a list may contain
+	//      return, and after it the counter may be lower
+	for _, n := range nodes {
+		c := backPropNodeCounterRec(n, depth)
+		if c > count {
+		    count = c
+		}
+	}
+
+	// Step 2: for this level set all counters to the maximum value
+	for _, n := range nodes {
+		n.SetCounter(count)
+	}
+
+	return count
+}
+
+// backPropNodeCounterRec implements the propagation of profile counters from
+// bottomn to top. The main goal of this step is to get the maximal counter
+// value to each level of a tree and to make possible the top to down pass
+// NOTE keep it symmetrically to forwardPropNodeCounterRec
+func backPropNodeCounterRec(n ir.Node, depth int) int64 {
+	if n == nil {
+		return 0
+	}
+
+	max := func(x, y, z int64) int64 {
+		res := x
+		if y > res {
+			res = y
+		}
+		if z > res {
+			return z
+		}
+		return res
+	}
+
+	var count int64
+	switch n.Op() {
+		case ir.OBLOCK:
+			n := n.(*ir.BlockStmt)
+			count      = backPropNodeListCounterRec(n.List, depth + 1)
+		case ir.OIF:
+			n := n.(*ir.IfStmt)
+			count      = backPropNodeCounterRec(n.Cond, depth + 1)
+			bodyCount := backPropNodeListCounterRec(n.Body, depth + 1)
+			elseCount := backPropNodeListCounterRec(n.Else, depth + 1)
+
+			sum   := bodyCount + elseCount
+			count  = max(count, sum, 0)
+		case ir.OAS:
+			n := n.(*ir.AssignStmt)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+			yC    := backPropNodeCounterRec(n.Y, depth + 1)
+			count  = max(count, yC, 0)
+		case ir.OAS2, ir.OAS2DOTTYPE, ir.OAS2FUNC, ir.OAS2MAPR,
+			ir.OAS2RECV, ir.OSELRECV2:
+			n := n.(*ir.AssignListStmt)
+			count  = backPropNodeListCounterRec(n.Lhs, depth + 1)
+			rC    := backPropNodeListCounterRec(n.Rhs, depth + 1)
+			count  = max(count, rC, 0)
+		case ir.OASOP:
+			n := n.(*ir.AssignOpStmt)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+			yC    := backPropNodeCounterRec(n.Y, depth + 1)
+			count  = max(count, yC, 0)
+		case ir.OFOR:
+			n := n.(*ir.ForStmt)
+			bC := backPropNodeListCounterRec(n.Body, depth + 1)
+			cC := backPropNodeCounterRec(n.Cond, depth + 1)
+			pC := backPropNodeCounterRec(n.Post, depth + 1)
+			if bC != 0 || cC != 0 || pC != 0 {
+				count = 1
+			} else {
+				count = 0
+			}
+		case ir.ORETURN:
+			n := n.(*ir.ReturnStmt)
+			count = backPropNodeListCounterRec(n.Results, depth + 1)
+		case ir.OADDR, ir.OPTRLIT:
+			n := n.(*ir.AddrExpr)
+			count = backPropNodeCounterRec(n.X, depth + 1)
+		case ir.ODEREF:
+			n := n.(*ir.StarExpr)
+			count = backPropNodeCounterRec(n.X, depth + 1)
+		case ir.OXDOT, ir.ODOT, ir.ODOTPTR, ir.ODOTMETH, ir.ODOTINTER, ir.OMETHVALUE, ir.OMETHEXPR:
+			n := n.(*ir.SelectorExpr)
+			count = backPropNodeCounterRec(n.X, depth + 1)
+		case ir.OARRAYLIT, ir.OMAPLIT, ir.OSLICELIT, ir.OSTRUCTLIT:
+			n := n.(*ir.CompLitExpr)
+			count  = backPropNodeCounterRec(n.RType, depth + 1)
+			lC    := backPropNodeListCounterRec(n.List, depth + 1)
+			count  = max(count, lC, 0)
+		case ir.OAPPEND, ir.OCALL, ir.OCALLFUNC, ir.OCALLINTER, ir.OCALLMETH,
+			ir.ODELETE, ir.OGETG, ir.OGETCALLERPC, ir.OGETCALLERSP,
+			ir.OMAKE, ir.OMAX, ir.OMIN, ir.OPRINT, ir.OPRINTLN,
+			ir.ORECOVER, ir.ORECOVERFP:
+
+			n := n.(*ir.CallExpr)
+
+			fC := backPropNodeCounterRec(n.Fun, depth + 1)
+			aC := backPropNodeListCounterRec(n.Args, depth + 1)
+			dC := backPropNodeCounterRec(n.DeferAt, depth + 1)
+			rC := backPropNodeCounterRec(n.RType, depth + 1)
+
+			count = max(fC, aC, dC)
+			count = max(count, rC, 0)
+		case ir.OADDSTR:
+			n := n.(*ir.AddStringExpr)
+			count = backPropNodeListCounterRec(n.List, depth + 1)
+		case ir.OSTRUCTKEY:
+			n := n.(*ir.StructKeyExpr)
+			count = backPropNodeCounterRec(n.Value, depth + 1)
+		case ir.ODEFER, ir.OGO:
+			n := n.(*ir.GoDeferStmt)
+			count = backPropNodeCounterRec(n.Call, depth + 1)
+		case ir.OKEY:
+			n := n.(*ir.KeyExpr)
+			count  = backPropNodeCounterRec(n.Key, depth + 1)
+			vC    := backPropNodeCounterRec(n.Value, depth + 1)
+			count  = max(count, vC, 0)
+		case ir.OADD, ir.OAND, ir.OANDNOT, ir.ODIV, ir.OEQ, ir.OGE, ir.OGT, ir.OLE,
+			ir.OLSH, ir.OLT, ir.OMOD, ir.OMUL, ir.ONE, ir.OOR, ir.ORSH, ir.OSUB, ir.OXOR,
+			ir.OCOPY, ir.OCOMPLEX, ir.OUNSAFEADD, ir.OUNSAFESLICE, ir.OUNSAFESTRING,
+			ir.OMAKEFACE:
+			// Binary expr
+			n := n.(*ir.BinaryExpr)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+			yC    := backPropNodeCounterRec(n.Y, depth + 1)
+			count  = max(count, yC, 0)
+		case ir.OBITNOT, ir.ONEG, ir.ONOT, ir.OPLUS, ir.ORECV,
+			ir.OCAP, ir.OCLEAR, ir.OCLOSE, ir.OIMAG, ir.OLEN, ir.ONEW, ir.OPANIC, ir.OREAL,
+			ir.OCHECKNIL, ir.OCFUNC, ir.OIDATA, ir.OITAB, ir.OSPTR,
+			ir.OUNSAFESTRINGDATA, ir.OUNSAFESLICEDATA:
+			// Unary expr
+			n     := n.(*ir.UnaryExpr)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+		case ir.OCONV, ir.OCONVIFACE, ir.OCONVNOP, ir.OBYTES2STR, ir.OBYTES2STRTMP,
+			ir.ORUNES2STR, ir.OSTR2BYTES, ir.OSTR2BYTESTMP, ir.OSTR2RUNES,
+			ir.ORUNESTR, ir.OSLICE2ARR, ir.OSLICE2ARRPTR:
+			// Unary expr
+			n     := n.(*ir.ConvExpr)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+		case ir.OANDAND, ir.OOROR:
+			// Logical expr
+			n := n.(*ir.LogicalExpr)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+			yC    := backPropNodeCounterRec(n.Y, depth + 1)
+			count  = max(count, yC, 0)
+		case ir.OMAKECHAN, ir.OMAKEMAP, ir.OMAKESLICE, ir.OMAKESLICECOPY:
+			n := n.(*ir.MakeExpr)
+			count  = backPropNodeCounterRec(n.Len, depth + 1)
+			capC  := backPropNodeCounterRec(n.Cap, depth + 1)
+			count  = max(count, capC, 0)
+		case ir.OINDEX, ir.OINDEXMAP:
+			n := n.(*ir.IndexExpr)
+			count   = backPropNodeCounterRec(n.X, depth + 1)
+			idxC   := backPropNodeCounterRec(n.Index, depth + 1)
+			rtypeC := backPropNodeCounterRec(n.RType, depth + 1)
+			count   = max(count, idxC, rtypeC)
+		case ir.OSLICE, ir.OSLICEARR, ir.OSLICESTR, ir.OSLICE3, ir.OSLICE3ARR:
+			n := n.(*ir.SliceExpr)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+			lC    := backPropNodeCounterRec(n.Low, depth + 1)
+			hC    := backPropNodeCounterRec(n.High, depth + 1)
+			mC    := backPropNodeCounterRec(n.Max, depth + 1)
+			count  = max(count, lC, hC)
+			count  = max(count, mC, 0)
+		case ir.ORANGE:
+			n := n.(*ir.RangeStmt)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+			rC    := backPropNodeCounterRec(n.RType, depth + 1)
+			kC    := backPropNodeCounterRec(n.Key, depth + 1)
+			vC    := backPropNodeCounterRec(n.Value, depth + 1)
+			bC    := backPropNodeListCounterRec(n.Body, depth + 1)
+			count  = max(count, rC, kC)
+			count  = max(count, vC, bC)
+		case ir.OSWITCH:
+			n := n.(*ir.SwitchStmt)
+			count = backPropNodeCounterRec(n.Tag, depth + 1)
+			// TODO Implement cases
+		case ir.OTYPESW:
+			n := n.(*ir.TypeSwitchGuard)
+			count = backPropNodeCounterRec(n.X, depth + 1)
+		case ir.ODOTTYPE, ir.ODOTTYPE2:
+			n := n.(*ir.TypeAssertExpr)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+		case ir.OSEND:
+			n := n.(*ir.SendStmt)
+			count  = backPropNodeCounterRec(n.Chan, depth + 1)
+			vC    := backPropNodeCounterRec(n.Value, depth + 1)
+			count  = max(count, vC, 0)
+		case ir.OSELECT:
+			n := n.(*ir.SelectStmt)
+			count  = backPropNodeListCounterRec(n.Compiled, depth + 1)
+		case ir.ODYNAMICDOTTYPE, ir.ODYNAMICDOTTYPE2:
+			n := n.(*ir.DynamicTypeAssertExpr)
+			count  = backPropNodeCounterRec(n.X, depth + 1)
+			sC    := backPropNodeCounterRec(n.SrcRType, depth + 1)
+			rC    := backPropNodeCounterRec(n.RType, depth + 1)
+			iC    := backPropNodeCounterRec(n.ITab, depth + 1)
+			count  = max(count, sC, rC)
+			count  = max(count, iC, 0)
+		case ir.ONAME, ir.OTYPE, ir.OLITERAL, ir.OBREAK, ir.OCONTINUE,
+			ir.OFALL, ir.OGOTO, ir.OLINKSYMOFFSET, ir.ONIL, ir.OCLOSURE,
+			ir.OLABEL:
+			// These are list nodes, nothing to propagate here
+			count = n.Counter()
+		default:
+			count = n.Counter()
+	}
+	n.SetCounter(count)
+	return count
+}
+
+// forwardPropNodeListCounterRec for all nodes in the list launch forward propagation
+func forwardPropNodeListCounterRec(nodes ir.Nodes, c int64, depth int) {
+	for _, n := range nodes {
+		forwardPropNodeCounterRec(n, c, depth)
+	}
+}
+
+// forwardPropNodeCounterRec implements the propagation of profile counters from
+// top to bottomn. The main goal of this step is to make counters of the tree
+// consistent
+// NOTE keep it symmetrically to backPropNodeCounterRec
+func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
+	if n == nil {
+		return
+	}
+
+	max := func(x, y, z int64) int64 {
+		res := x
+		if y > res {
+			res = y
+		}
+		if z > res {
+			return z
+		}
+		return res
+	}
+
+	n.SetCounter(c)
+	switch n.Op() {
+		case ir.OBLOCK:
+			n := n.(*ir.BlockStmt)
+			forwardPropNodeListCounterRec(n.List, c, depth + 1)
+		case ir.OIF:
+			n := n.(*ir.IfStmt)
+
+			forwardPropNodeCounterRec(n.Cond, c, depth + 1)
+
+			bodyCount := int64(0)
+			if len(n.Body) != 0 {
+				bodyCount = n.Body[0].Counter() // All counters in list are equal
+			}
+
+			if n.Else == nil {
+				// Without else we can not correct the body counter
+				forwardPropNodeListCounterRec(n.Body, bodyCount, depth + 1)
+				break;
+			}
+
+			elseCount := int64(0)
+			if len(n.Else) != 0 {
+				elseCount = n.Else[0].Counter() // All counters in list are equal
+			}
+			if bodyCount + elseCount > c {
+				panic("Error")
+			}
+
+			if bodyCount + elseCount < c {
+				// Sum of two if branches is lesser than if counter
+				// We should correct the counters
+				ratio := float64(0.5)
+				if bodyCount + elseCount != 0 {
+					ratio = float64(c) /  float64(bodyCount + elseCount)
+				}
+				bodyCount = int64(float64(bodyCount) * ratio)
+				elseCount = c - bodyCount
+				forwardPropNodeListCounterRec(n.Body, bodyCount, depth + 1)
+				forwardPropNodeListCounterRec(n.Else, elseCount, depth + 1)
+			}
+		case ir.OAS:
+			n := n.(*ir.AssignStmt)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.Y, c, depth + 1)
+		case ir.OAS2, ir.OAS2DOTTYPE, ir.OAS2FUNC, ir.OAS2MAPR,
+			ir.OAS2RECV, ir.OSELRECV2:
+			n := n.(*ir.AssignListStmt)
+			forwardPropNodeListCounterRec(n.Lhs, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Rhs, c, depth + 1)
+		case ir.OASOP:
+			n := n.(*ir.AssignOpStmt)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.Y, c, depth + 1)
+		case ir.OFOR:
+			n := n.(*ir.ForStmt)
+			var bC, cC, pC int64
+			if n.Body != nil {
+				bC = c
+				if len(n.Body) != 0 {
+					bC = n.Body[0].Counter()
+				}
+			}
+			if n.Cond != nil {
+				cC = n.Cond.Counter()
+			}
+			if n.Post != nil {
+				pC = n.Post.Counter()
+			}
+
+			c = max(bC, cC, pC)
+			if n.Body != nil {
+				forwardPropNodeListCounterRec(n.Body, c, depth + 1)
+			}
+			if n.Cond != nil {
+				forwardPropNodeCounterRec(n.Cond, c, depth + 1)
+			}
+			if n.Post != nil {
+				forwardPropNodeCounterRec(n.Post, c, depth + 1)
+			}
+		case ir.ORETURN:
+			n := n.(*ir.ReturnStmt)
+			forwardPropNodeListCounterRec(n.Results, c, depth + 1)
+		case ir.OADDR, ir.OPTRLIT:
+			n := n.(*ir.AddrExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+		case ir.ODEREF:
+			n := n.(*ir.StarExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+		case ir.OXDOT, ir.ODOT, ir.ODOTPTR, ir.ODOTMETH, ir.ODOTINTER, ir.OMETHVALUE, ir.OMETHEXPR:
+			n := n.(*ir.SelectorExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+		case ir.OARRAYLIT, ir.OMAPLIT, ir.OSLICELIT, ir.OSTRUCTLIT:
+			n := n.(*ir.CompLitExpr)
+			forwardPropNodeCounterRec(n.RType, c, depth + 1)
+			forwardPropNodeListCounterRec(n.List, c, depth + 1)
+		case ir.OAPPEND, ir.OCALL, ir.OCALLFUNC, ir.OCALLINTER, ir.OCALLMETH,
+			ir.ODELETE, ir.OGETG, ir.OGETCALLERPC, ir.OGETCALLERSP,
+			ir.OMAKE, ir.OMAX, ir.OMIN, ir.OPRINT, ir.OPRINTLN,
+			ir.ORECOVER, ir.ORECOVERFP:
+
+			n := n.(*ir.CallExpr)
+
+			forwardPropNodeCounterRec(n.Fun, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Args, c, depth + 1)
+			forwardPropNodeCounterRec(n.DeferAt, c, depth + 1)
+			forwardPropNodeCounterRec(n.RType, c ,depth + 1)
+		case ir.OADDSTR:
+			n := n.(*ir.AddStringExpr)
+			if n.List != nil {
+				forwardPropNodeListCounterRec(n.List, c, depth + 1)
+			}
+		case ir.OSTRUCTKEY:
+			n := n.(*ir.StructKeyExpr)
+			forwardPropNodeCounterRec(n.Value, c, depth + 1)
+		case ir.ODEFER, ir.OGO:
+			n := n.(*ir.GoDeferStmt)
+			forwardPropNodeCounterRec(n.Call, c, depth + 1)
+		case ir.OKEY:
+			n := n.(*ir.KeyExpr)
+			forwardPropNodeCounterRec(n.Key, c, depth + 1)
+			forwardPropNodeCounterRec(n.Value, c, depth + 1)
+		case ir.OADD, ir.OAND, ir.OANDNOT, ir.ODIV, ir.OEQ, ir.OGE, ir.OGT, ir.OLE,
+			ir.OLSH, ir.OLT, ir.OMOD, ir.OMUL, ir.ONE, ir.OOR, ir.ORSH, ir.OSUB, ir.OXOR,
+			ir.OCOPY, ir.OCOMPLEX, ir.OUNSAFEADD, ir.OUNSAFESLICE, ir.OUNSAFESTRING,
+			ir.OMAKEFACE:
+			// Binary expr
+			n := n.(*ir.BinaryExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.Y, c, depth + 1)
+		case ir.OBITNOT, ir.ONEG, ir.ONOT, ir.OPLUS, ir.ORECV,
+			ir.OCAP, ir.OCLEAR, ir.OCLOSE, ir.OIMAG, ir.OLEN, ir.ONEW, ir.OPANIC, ir.OREAL,
+			ir.OCHECKNIL, ir.OCFUNC, ir.OIDATA, ir.OITAB, ir.OSPTR,
+			ir.OUNSAFESTRINGDATA, ir.OUNSAFESLICEDATA:
+			// Unary expr
+			n := n.(*ir.UnaryExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+		case ir.OCONV, ir.OCONVIFACE, ir.OCONVNOP, ir.OBYTES2STR, ir.OBYTES2STRTMP,
+			ir.ORUNES2STR, ir.OSTR2BYTES, ir.OSTR2BYTESTMP, ir.OSTR2RUNES,
+			ir.ORUNESTR, ir.OSLICE2ARR, ir.OSLICE2ARRPTR:
+			// Unary expr
+			n     := n.(*ir.ConvExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+		case ir.OANDAND, ir.OOROR:
+			// Logical expr
+			n := n.(*ir.LogicalExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.Y, c, depth + 1)
+		case ir.OMAKECHAN, ir.OMAKEMAP, ir.OMAKESLICE, ir.OMAKESLICECOPY:
+			n := n.(*ir.MakeExpr)
+			forwardPropNodeCounterRec(n.Len, c, depth + 1)
+			forwardPropNodeCounterRec(n.Cap, c, depth + 1)
+		case ir.OINDEX, ir.OINDEXMAP:
+			n := n.(*ir.IndexExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.Index, c, depth + 1)
+			forwardPropNodeCounterRec(n.RType, c, depth + 1)
+		case ir.OSLICE, ir.OSLICEARR, ir.OSLICESTR, ir.OSLICE3, ir.OSLICE3ARR:
+			n := n.(*ir.SliceExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.Low, c, depth + 1)
+			forwardPropNodeCounterRec(n.High, c, depth + 1)
+			forwardPropNodeCounterRec(n.Max, c, depth + 1)
+		case ir.ORANGE:
+			n := n.(*ir.RangeStmt)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.RType, c, depth + 1)
+			forwardPropNodeCounterRec(n.Key, c, depth + 1)
+			forwardPropNodeCounterRec(n.Value, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Body, c, depth + 1)
+		case ir.OSWITCH:
+			n := n.(*ir.SwitchStmt)
+			forwardPropNodeCounterRec(n.Tag, c, depth + 1)
+			// TODO Implement cases
+		case ir.OTYPESW:
+			n := n.(*ir.TypeSwitchGuard)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+		case ir.ODOTTYPE, ir.ODOTTYPE2:
+			n := n.(*ir.TypeAssertExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+		case ir.OSEND:
+			n := n.(*ir.SendStmt)
+			forwardPropNodeCounterRec(n.Chan, c, depth + 1)
+			forwardPropNodeCounterRec(n.Value, c, depth + 1)
+		case ir.OSELECT:
+			n := n.(*ir.SelectStmt)
+			forwardPropNodeListCounterRec(n.Compiled, c, depth + 1)
+		case ir.ODYNAMICDOTTYPE, ir.ODYNAMICDOTTYPE2:
+			n := n.(*ir.DynamicTypeAssertExpr)
+			forwardPropNodeCounterRec(n.X, c, depth + 1)
+			forwardPropNodeCounterRec(n.SrcRType, c, depth + 1)
+			forwardPropNodeCounterRec(n.RType, c, depth + 1)
+			forwardPropNodeCounterRec(n.ITab, c, depth + 1)
+		case ir.ONAME, ir.OTYPE, ir.OLITERAL, ir.OBREAK, ir.OCONTINUE,
+			ir.OFALL, ir.OGOTO, ir.OLINKSYMOFFSET, ir.ONIL, ir.OCLOSURE,
+			ir.OLABEL:
+			// These are list nodes, nothing to propagate here
+		default:
+			fmt.Println()
+			panic("Not implemented IR profile propagation for node type: " + string(ir.Op(n.Op())))
+	}
+	return
+}
+
+// propagateCounters this function starts back and forward counter propagation
+func propagateCounters(f *ir.Func) {
+	c := backPropNodeListCounterRec(f.Body, 0)
+	forwardPropNodeListCounterRec(f.Body, c, 0)
+}
+
+
+// loadCounters loads counters to the nodes of AST from profile
+func loadCounters(p *profile.Profile) {
+	// Build a table functionName <-> ir.Func to get quick search
+	// beteween profile.Function and ir.Func
+	type FuncSamples struct {
+		Func   *ir.Func
+		// This is the map line <-> Sample for quick search
+		Sample map[int64][]*profile.Sample
+	}
+	funcTable := make(map[string]*FuncSamples)
+	ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
+		for _, f := range list {
+			fs := &FuncSamples{
+				Func   : f,
+				Sample : make(map[int64][]*profile.Sample),
+			}
+			name := ir.LinkFuncName(f)
+			funcTable[name] = fs
+		}
+	})
+
+	// Watch all samples and add the sample to the function
+	// table lineNum <-> sample
+	for _, s := range p.Sample {
+		lastLocIdx := len(s.Location)
+		if lastLocIdx == 0 {
+			continue
+		}
+		loc := s.Location[0]
+		// One sample may relate to few lines in the code (for example,
+		// if the instruction lies on the other function and the
+		// function was inlined). So we add the sample to all the
+		// entries
+		for _, l := range loc.Line {
+			fs, ok := funcTable[l.Function.SystemName]
+			if !ok {
+				// This function is not seen inside this package
+				continue
+			}
+
+			fs.Sample[l.Line] = append(fs.Sample[l.Line], s)
+		}
+	}
+
+	// Visit all the AST functions and for every node set the counter
+	for _, fs := range funcTable {
+		ir.VisitList(fs.Func.Body, func(n ir.Node) {
+		sample, ok := fs.Sample[int64(n.Pos().Line())]
+		if !ok {
+			return
+		}
+		n.SetCounter(sample[0].Value[0])
+	})
+	}
+}
+
 
 // processPreprof generates a profile-graph from the pre-procesed profile.
 func processPreprof(r io.Reader) (*Profile, error) {

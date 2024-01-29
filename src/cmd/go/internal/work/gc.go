@@ -114,6 +114,9 @@ func (gcToolchain) gc(b *Builder, a *Action, archive string, importcfg, embedcfg
 	if p.Internal.PGOProfile != "" {
 		defaultGcFlags = append(defaultGcFlags, "-pgoprofile="+p.Internal.PGOProfile)
 	}
+	if cfg.BuildBBPGO {
+		defaultGcFlags = append(defaultGcFlags, "-bbpgoprofile")
+	}
 	if symabis != "" {
 		defaultGcFlags = append(defaultGcFlags, "-symabis", symabis)
 	}

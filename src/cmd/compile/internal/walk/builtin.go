@@ -144,7 +144,7 @@ func walkClear(n *ir.UnaryExpr) ir.Node {
 			return n
 		}
 		// If n == nil, we are clearing an array which takes zero memory, do nothing.
-		return ir.NewBlockStmt(n.Pos(), nil)
+		return ir.NewBlockStmt(n.Pos(), n.Counter(), nil)
 	case typ.IsMap():
 		return mapClear(n.X, reflectdata.TypePtrAt(n.X.Pos(), n.X.Type()))
 	}
@@ -672,7 +672,7 @@ func walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 	typecheck.Stmts(calls)
 	walkExprList(calls, init)
 
-	r := ir.NewBlockStmt(base.Pos, nil)
+	r := ir.NewBlockStmt(base.Pos, nn.Counter(), nil)
 	r.List = calls
 	return walkStmt(typecheck.Stmt(r))
 }
