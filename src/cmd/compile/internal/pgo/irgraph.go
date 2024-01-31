@@ -191,11 +191,71 @@ func New(profileFile string) (*Profile, error) {
 	// Create package-level call graph with weights from profile and IR.
 	wg := createIRGraph(namedEdgeMap)
 
+	// Load counters
+	loadCounters(p)
+
 	return &Profile{
 		TotalWeight:  totalWeight,
 		NamedEdgeMap: namedEdgeMap,
 		WeightedCG:   wg,
 	}, nil
+}
+
+
+// loadCounters loads counters to the nodes of AST from profile
+func loadCounters(p *profile.Profile) {
+	// Build a table functionName <-> ir.Func to get quick search
+	// beteween profile.Function and ir.Func
+	type FuncSamples struct {
+		Func   *ir.Func
+		// This is the map line <-> Sample for quick search
+		Sample map[int64][]*profile.Sample
+	}
+	funcTable := make(map[string]*FuncSamples)
+	ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
+		for _, f := range list {
+			fs := &FuncSamples{
+				Func   : f,
+				Sample : make(map[int64][]*profile.Sample),
+			}
+			name := ir.LinkFuncName(f)
+			funcTable[name] = fs
+		}
+	})
+
+	// Watch all samples and add the sample to the function
+	// table lineNum <-> sample
+	for _, s := range p.Sample {
+		lastLocIdx := len(s.Location)
+		if lastLocIdx == 0 {
+			continue
+		}
+		loc := s.Location[0]
+		// One sample may relate to few lines in the code (for example,
+		// if the instruction lies on the other function and the
+		// function was inlined). So we add the sample to all the
+		// entries
+		for _, l := range loc.Line {
+			fs, ok := funcTable[l.Function.SystemName]
+			if !ok {
+				// This function is not seen inside this package
+				continue
+			}
+
+			fs.Sample[l.Line] = append(fs.Sample[l.Line], s)
+		}
+	}
+
+	// Visit all the AST functions and for every node set the counter
+	for funcName, fs := range funcTable {
+		ir.VisitList(fs.Func.Body, func(n ir.Node) {
+		sample, ok := fs.Sample[int64(n.Pos().Line())]
+		if !ok {
+			return
+		}
+		n.SetCounter(sample[0].Value[0])
+	})
+	}
 }
 
 // createNamedEdgeMap builds a map of callsite-callee edge weights from the

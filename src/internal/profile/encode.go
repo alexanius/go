@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"os"
 )
 
 func (p *Profile) decoder() []decoder {
@@ -209,25 +210,49 @@ var profileDecoder = []decoder{
 func (p *Profile) postDecode() error {
 	var err error
 
+_, present := os.LookupEnv("AAA")
+if present {
+fmt.Println(len(os.Args), os.Args) // NOCOMMIT
+}
+
+	// Load mapping for different files
+if present {
+fmt.Printf("Start mappings %d:\n", len(p.Mapping)) // NOCOMMIT
+}
 	mappings := make(map[uint64]*Mapping)
 	for _, m := range p.Mapping {
 		m.File, err = getString(p.stringTable, &m.fileX, err)
 		m.BuildID, err = getString(p.stringTable, &m.buildIDX, err)
 		mappings[m.ID] = m
+if present {
+fmt.Println("Profile mapping: ", m) // NOCOMMIT
+}
 	}
 
 	functions := make(map[uint64]*Function)
+if present {
+fmt.Printf("\n\nStart functions %d:\n", len(p.Function)) // NOCOMMIT
+}
 	for _, f := range p.Function {
 		f.Name, err = getString(p.stringTable, &f.nameX, err)
 		f.SystemName, err = getString(p.stringTable, &f.systemNameX, err)
 		f.Filename, err = getString(p.stringTable, &f.filenameX, err)
 		functions[f.ID] = f
+if present {
+fmt.Println("Profile function: ", f) // NOCOMMIT
+}
 	}
 
 	locations := make(map[uint64]*Location)
+if present {
+fmt.Printf("\n\nStart locations %d:\n", len(p.Location)) // NOCOMMIT
+}
 	for _, l := range p.Location {
 		l.Mapping = mappings[l.mappingIDX]
 		l.mappingIDX = 0
+if present {
+fmt.Printf("  Start lines (%d) for location %d:\n", len(l.Line), l.ID) // NOCOMMIT
+}
 		for i, ln := range l.Line {
 			if id := ln.functionIDX; id != 0 {
 				l.Line[i].Function = functions[id]
@@ -235,16 +260,36 @@ func (p *Profile) postDecode() error {
 					return fmt.Errorf("Function ID %d not found", id)
 				}
 				l.Line[i].functionIDX = 0
+//if present && l.Line[i].Function.Name == "test/bench/go1.fannkuch" {
+//fmt.Println("__!!!__ %d", l.Line[i]) // NOCOMMIT
+//}
 			}
+if present {
+fmt.Println("  Profile line: ", l.Line[i]) // NOCOMMIT
+fmt.Println("        Functions: ", l.Line[i].Function.Name) // NOCOMMIT
+}
 		}
 		locations[l.ID] = l
+if present {
+fmt.Println("Profile location: ", l) // NOCOMMIT
+fmt.Println("          MappingID: ", l.Mapping.ID) // NOCOMMIT
+}
 	}
 
+if present {
+fmt.Printf("\n\nStart profile sample type %d:\n", len(p.SampleType)) // NOCOMMIT
+}
 	for _, st := range p.SampleType {
 		st.Type, err = getString(p.stringTable, &st.typeX, err)
 		st.Unit, err = getString(p.stringTable, &st.unitX, err)
+if present {
+fmt.Println("Profile sample type: ", st) // NOCOMMIT
+}
 	}
 
+if present {
+fmt.Printf("\n\nStart profile sample %d:\n", len(p.Sample)) // NOCOMMIT
+}
 	for _, s := range p.Sample {
 		labels := make(map[string][]string)
 		numLabels := make(map[string][]int64)
@@ -269,6 +314,9 @@ func (p *Profile) postDecode() error {
 			s.Location = append(s.Location, locations[lid])
 		}
 		s.locationIDX = nil
+if present {
+fmt.Println("Profile sample: ", s) // NOCOMMIT
+}
 	}
 
 	p.DropFrames, err = getString(p.stringTable, &p.dropFramesX, err)
