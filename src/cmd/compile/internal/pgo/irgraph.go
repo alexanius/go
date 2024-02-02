@@ -247,7 +247,7 @@ func loadCounters(p *profile.Profile) {
 	}
 
 	// Visit all the AST functions and for every node set the counter
-	for funcName, fs := range funcTable {
+	for _, fs := range funcTable {
 		ir.VisitList(fs.Func.Body, func(n ir.Node) {
 		sample, ok := fs.Sample[int64(n.Pos().Line())]
 		if !ok {
