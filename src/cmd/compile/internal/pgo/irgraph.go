@@ -423,6 +423,17 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 		return
 	}
 
+	max := func(x, y, z int64) int64 {
+		res := x
+		if y > res {
+			res = y
+		}
+		if z > res {
+			return z
+		}
+		return res
+	}
+
 	n.SetCounter(c)
 	switch n.Op() {
 		case ir.OIF:
@@ -477,18 +488,35 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 		case ir.OFOR:
 			n := n.(*ir.ForStmt)
 			// TODO correct with iters number
+			var bC, cC, pC int64
 			if n.Body != nil {
-				bodyCounter := c
+				bC = c
 				if len(n.Body) != 0 {
-					bodyCounter = n.Body[0].Counter()
+					bC = n.Body[0].Counter()
 				}
-				forwardPropNodeListCounterRec(n.Body, bodyCounter, depth + 1)
 			}
 			if n.Cond != nil {
-				forwardPropNodeCounterRec(n.Cond, n.Cond.Counter(), depth + 1)
+				cC = n.Cond.Counter()
 			}
 			if n.Post != nil {
-				forwardPropNodeCounterRec(n.Post, n.Post.Counter(), depth + 1)
+				pC = n.Post.Counter()
+			}
+
+			c = max(bC, cC, pC)
+if present {
+if c == 17 {
+println("!!! ", &n, &n.Post)
+println("My Loop")
+}
+}
+			if n.Body != nil {
+				forwardPropNodeListCounterRec(n.Body, c, depth + 1)
+			}
+			if n.Cond != nil {
+				forwardPropNodeCounterRec(n.Cond, c, depth + 1)
+			}
+			if n.Post != nil {
+				forwardPropNodeCounterRec(n.Post, c, depth + 1)
 			}
 		case ir.ORETURN:
 			n := n.(*ir.ReturnStmt)
@@ -593,7 +621,7 @@ if present {
 
 func propagateCounters(f *ir.Func) {
 _, present = os.LookupEnv("AAA") 
-//present = present &&ir.LinkFuncName(f) == "test/bench/go1.fannkuch"
+present = present &&ir.LinkFuncName(f) == "test/bench/go1.fannkuch"
 	c := backPropNodeListCounterRec(f.Body, 0)
 	forwardPropNodeListCounterRec(f.Body, c, 0)
 }

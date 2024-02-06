@@ -129,7 +129,7 @@ func mkcallstmt1(fn ir.Node, args ...ir.Node) ir.Node {
 		return n
 	}
 	init.Append(n)
-	return ir.NewBlockStmt(n.Pos(), init)
+	return ir.NewBlockStmt(n.Pos(), n.Counter(), init)
 }
 
 func chanfn(name string, n int, t *types.Type) ir.Node {

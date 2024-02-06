@@ -969,6 +969,14 @@ func (s *state) startBlock(b *ssa.Block, c int64) {
 	if s.curBlock != nil {
 		s.Fatalf("starting block %v when block %v has not ended", b, s.curBlock)
 	}
+_, present := os.LookupEnv("AAA")
+//if present {
+//println("!!!! ", b.Func.Name)
+//}
+present = present && b.Func.Name == "fannkuch" && (b.ID==31 || b.ID==34 || b.ID==32)
+if present {
+println("!!!!")
+}
 	s.curBlock = b
 	s.lastCounter = c
 	b.Counter = c
@@ -1445,9 +1453,6 @@ func (s *state) stmt(n ir.Node) {
 		return
 	}
 
-//	if s.curBlock.Counter != nil {
-//		s.curBlock.Counter = n.Counter()
-//	}
 	s.stmtList(n.Init())
 	switch n.Op() {
 
@@ -1584,7 +1589,7 @@ func (s *state) stmt(n ir.Node) {
 
 		b := s.endBlock()
 		b.Pos = s.lastPos.WithIsStmt() // Do this even if b is an empty block.
-		b.Counter = s.lastCounter
+//		b.Counter = s.lastCounter
 		b.AddEdgeTo(lab.target)
 
 	case ir.OAS:
@@ -1776,7 +1781,7 @@ func (s *state) stmt(n ir.Node) {
 		s.stmtList(n.Results)
 		b := s.exit()
 		b.Pos = s.lastPos.WithIsStmt()
-		b.Counter = s.lastCounter
+//		b.Counter = s.lastCounter
 
 	case ir.OTAILCALL:
 		n := n.(*ir.TailCallStmt)
@@ -1811,7 +1816,7 @@ func (s *state) stmt(n ir.Node) {
 
 		b := s.endBlock()
 		b.Pos = s.lastPos.WithIsStmt() // Do this even if b is an empty block.
-		b.Counter = s.lastCounter
+//		b.Counter = s.lastCounter
 		b.AddEdgeTo(to)
 
 	case ir.OFOR:
@@ -1832,7 +1837,11 @@ func (s *state) stmt(n ir.Node) {
 		b.AddEdgeTo(bCond)
 
 		// generate code to test condition
-		s.startBlock(bCond, n.Counter())
+		counter := n.Counter()
+		if n.Cond != nil {
+			counter = n.Cond.Counter()
+		}
+		s.startBlock(bCond, counter)
 		if n.Cond != nil {
 			s.condBranch(n.Cond, bBody, bEnd, 1)
 		} else {
@@ -1855,7 +1864,10 @@ func (s *state) stmt(n ir.Node) {
 		}
 
 		// generate body
-		s.startBlock(bBody, n.Counter())
+		if n.Body != nil && len(n.Body) > 0 {
+			counter = n.Body[0].Counter()
+		}
+		s.startBlock(bBody, counter)
 		s.stmtList(n.Body)
 
 		// tear down continue/break
@@ -1872,7 +1884,15 @@ func (s *state) stmt(n ir.Node) {
 		}
 
 		// generate incr
-		s.startBlock(bIncr, n.Counter())
+		if n.Post != nil {
+			counter = n.Post.Counter()
+_, present := os.LookupEnv("AAA")
+present = present && b.Func.Name == "fannkuch"
+if present {
+println("___ ", &n, &(n.Post))
+}
+		}
+		s.startBlock(bIncr, counter)
 		if n.Post != nil {
 			s.stmt(n.Post)
 		}

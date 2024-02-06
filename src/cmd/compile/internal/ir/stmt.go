@@ -131,9 +131,10 @@ type BlockStmt struct {
 	List Nodes
 }
 
-func NewBlockStmt(pos src.XPos, list []Node) *BlockStmt {
+func NewBlockStmt(pos src.XPos, counter int64, list []Node) *BlockStmt {
 	n := &BlockStmt{}
 	n.pos = pos
+	n.counter = counter
 	if !pos.IsKnown() {
 		n.pos = base.Pos
 		if len(list) > 0 {

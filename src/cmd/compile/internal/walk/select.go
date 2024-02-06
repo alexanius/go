@@ -254,7 +254,7 @@ func walkSelectCases(cases []*ir.CommClause) []ir.Node {
 			cond = typecheck.DefaultLit(cond, nil)
 			r = ir.NewIfStmt(base.Pos, cond, list, nil)
 		} else {
-			r = ir.NewBlockStmt(base.Pos, list)
+			r = ir.NewBlockStmt(base.Pos, 0, list)
 		}
 
 		init = append(init, r)

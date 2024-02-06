@@ -56,7 +56,7 @@ func walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 	as := n.(*ir.AssignStmt)
 
 	if oaslit(as, init) {
-		return ir.NewBlockStmt(as.Pos(), nil)
+		return ir.NewBlockStmt(as.Pos(), as.Counter(), nil)
 	}
 
 	if as.Y == nil {
@@ -139,13 +139,13 @@ func walkAssignFunc(init *ir.Nodes, n *ir.AssignListStmt) ir.Node {
 	init.Append(r)
 
 	ll := ascompatet(n.Lhs, r.Type())
-	return ir.NewBlockStmt(src.NoXPos, ll)
+	return ir.NewBlockStmt(src.NoXPos, n.Counter(), ll)
 }
 
 // walkAssignList walks an OAS2 node.
 func walkAssignList(init *ir.Nodes, n *ir.AssignListStmt) ir.Node {
 	init.Append(ir.TakeInit(n)...)
-	return ir.NewBlockStmt(src.NoXPos, ascompatee(ir.OAS, n.Lhs, n.Rhs))
+	return ir.NewBlockStmt(src.NoXPos, n.Counter(), ascompatee(ir.OAS, n.Lhs, n.Rhs))
 }
 
 // walkAssignMapRead walks an OAS2MAPR node.
