@@ -4,6 +4,8 @@
 
 package ssa
 
+import "os"
+
 // layout orders basic blocks in f with the goal of minimizing control flow instructions.
 // After this phase returns, the order of f.Blocks matters and is the order
 // in which those blocks will appear in the assembly output.
@@ -130,6 +132,14 @@ blockloop:
 		case BranchUnlikely:
 			likely = b.Succs[1].b
 		}
+_, present := os.LookupEnv("GOBBPROF")
+if present {
+		if len(b.Succs) > 1 && b.Succs[0].b.Counter < b.Succs[1].b.Counter {
+			likely = b.Succs[1].b
+		} else if len(b.Succs) > 1 && b.Succs[0].b.Counter > b.Succs[1].b.Counter {
+			likely = b.Succs[0].b
+		}
+}
 		if likely != nil && !scheduled[likely.ID] {
 			bid = likely.ID
 			continue
