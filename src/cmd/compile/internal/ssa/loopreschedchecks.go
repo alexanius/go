@@ -232,13 +232,13 @@ func insertLoopReschedChecks(f *Func) {
 		test.SetControl(cmp)
 
 		// if true, goto sched
-		test.AddEdgeTo(sched)
+		test.AddEdgeToP(sched, 0)
 
 		// if false, rewrite edge to header.
 		// do NOT remove+add, because that will perturb all the other phi functions
 		// as well as messing up other edges to the header.
-		test.Succs = append(test.Succs, Edge{h, i})
-		h.Preds[i] = Edge{test, 1}
+		test.Succs = append(test.Succs, Edge{h, 0, i})
+		h.Preds[i] = Edge{test, 0, 1}
 		headerMemPhi.SetArg(i, mem0)
 
 		test.Likely = BranchUnlikely
@@ -249,11 +249,11 @@ func insertLoopReschedChecks(f *Func) {
 		resched := f.fe.Syslook("goschedguarded")
 		call := sched.NewValue1A(bb.Pos, OpStaticCall, types.TypeResultMem, StaticAuxCall(resched, bb.Func.ABIDefault.ABIAnalyzeTypes(nil, nil)), mem0)
 		mem1 := sched.NewValue1I(bb.Pos, OpSelectN, types.TypeMem, 0, call)
-		sched.AddEdgeTo(h)
+		sched.AddEdgeToP(h, 0)
 		headerMemPhi.AddArg(mem1)
 
-		bb.Succs[p.i] = Edge{test, 0}
-		test.Preds = append(test.Preds, Edge{bb, p.i})
+		bb.Succs[p.i] = Edge{test, 0, 0}
+		test.Preds = append(test.Preds, Edge{bb, 0, p.i})
 
 		// Must correct all the other phi functions in the header for new incoming edge.
 		// Except for mem phis, it will be the same value seen on the original

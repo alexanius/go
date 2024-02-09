@@ -5,6 +5,7 @@
 package ssa
 
 import "os"
+import "fmt"
 
 // layout orders basic blocks in f with the goal of minimizing control flow instructions.
 // After this phase returns, the order of f.Blocks matters and is the order
@@ -135,8 +136,14 @@ blockloop:
 _, present := os.LookupEnv("GOBBPROF")
 if present {
 		if len(b.Succs) > 1 && b.Succs[0].b.Counter < b.Succs[1].b.Counter {
+			if likely != nil && likely != b.Succs[0].b {
+				fmt.Println("MISPREDICT: ", b.ID, " ", f.Name)
+			}
 			likely = b.Succs[1].b
 		} else if len(b.Succs) > 1 && b.Succs[0].b.Counter > b.Succs[1].b.Counter {
+			if likely != nil && likely != b.Succs[1].b {
+				fmt.Println("MISPREDICT: ", b.ID, " ", f.Name)
+			}
 			likely = b.Succs[0].b
 		}
 }

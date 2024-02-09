@@ -25,13 +25,13 @@ func trim(f *Func) {
 		p, i := b.Preds[0].b, b.Preds[0].i
 		s, j := b.Succs[0].b, b.Succs[0].i
 		ns := len(s.Preds)
-		p.Succs[i] = Edge{s, j}
-		s.Preds[j] = Edge{p, i}
+		p.Succs[i] = Edge{s, 0, j}
+		s.Preds[j] = Edge{p, 0, i}
 
 		for _, e := range b.Preds[1:] {
 			p, i := e.b, e.i
-			p.Succs[i] = Edge{s, len(s.Preds)}
-			s.Preds = append(s.Preds, Edge{p, i})
+			p.Succs[i] = Edge{s, 0, len(s.Preds)}
+			s.Preds = append(s.Preds, Edge{p, 0, i})
 		}
 
 		// Attempt to preserve a statement boundary

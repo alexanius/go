@@ -97,6 +97,10 @@ type Block struct {
 type Edge struct {
 	// block edge goes to (in a Succs list) or from (in a Preds list)
 	b *Block
+
+	// Edge counter
+	c int64
+
 	// index of reverse edge.  Invariant:
 	//   e := x.Succs[idx]
 	//   e.b.Preds[e.i] = Edge{x,idx}
@@ -272,11 +276,20 @@ func (b *Block) truncateValues(i int) {
 }
 
 // AddEdgeTo adds an edge from block b to block c.
+func (b *Block) AddEdgeToP(c *Block, counter int64) {
+	i := len(b.Succs)
+	j := len(c.Preds)
+	b.Succs = append(b.Succs, Edge{c, counter, j})
+	c.Preds = append(c.Preds, Edge{b, counter, i})
+	b.Func.invalidateCFG()
+}
+
+// AddEdgeTo adds an edge from block b to block c.
 func (b *Block) AddEdgeTo(c *Block) {
 	i := len(b.Succs)
 	j := len(c.Preds)
-	b.Succs = append(b.Succs, Edge{c, j})
-	c.Preds = append(c.Preds, Edge{b, i})
+	b.Succs = append(b.Succs, Edge{c, 0, j})
+	c.Preds = append(c.Preds, Edge{b, 0, i})
 	b.Func.invalidateCFG()
 }
 

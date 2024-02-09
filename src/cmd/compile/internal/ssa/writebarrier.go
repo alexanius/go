@@ -355,9 +355,9 @@ func writebarrier(f *Func) {
 		b.SetControl(flag)
 		b.Likely = BranchUnlikely
 		b.Succs = b.Succs[:0]
-		b.AddEdgeTo(bThen)
-		b.AddEdgeTo(bEnd)
-		bThen.AddEdgeTo(bEnd)
+		b.AddEdgeToP(bThen, 0)
+		b.AddEdgeToP(bEnd, 0)
+		bThen.AddEdgeToP(bEnd, 0)
 
 		// For each write barrier store, append write barrier code to bThen.
 		memThen := mem

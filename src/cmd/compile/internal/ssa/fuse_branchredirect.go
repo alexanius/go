@@ -75,7 +75,7 @@ func fuseBranchRedirect(f *Func) bool {
 					continue
 				}
 				b.removePred(k)
-				p.Succs[pk.i] = Edge{child, len(child.Preds)}
+				p.Succs[pk.i] = Edge{child, 0, len(child.Preds)}
 				// Fix up Phi value in b to have one less argument.
 				for _, v := range b.Values {
 					if v.Op != OpPhi {
@@ -84,7 +84,7 @@ func fuseBranchRedirect(f *Func) bool {
 					b.removePhiArg(v, k)
 				}
 				// Fix up child to have one more predecessor.
-				child.Preds = append(child.Preds, Edge{p, pk.i})
+				child.Preds = append(child.Preds, Edge{p, 0, pk.i})
 				ai := b.Succs[out].i
 				for _, v := range child.Values {
 					if v.Op != OpPhi {

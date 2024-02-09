@@ -70,7 +70,7 @@ func sccp(f *Func) {
 	t.f = f
 	t.edges = make([]Edge, 0)
 	t.visited = make(map[Edge]bool)
-	t.edges = append(t.edges, Edge{f.Entry, 0})
+	t.edges = append(t.edges, Edge{f.Entry, 0, 0})
 	t.defUse = make(map[*Value][]*Value)
 	t.defBlock = make(map[*Value][]*Block)
 	t.latticeCells = make(map[*Value]lattice)
@@ -292,7 +292,7 @@ func (t *worklist) addUses(val *Value) {
 func (t *worklist) meet(val *Value) lattice {
 	optimisticLt := lattice{top, nil}
 	for i := 0; i < len(val.Args); i++ {
-		edge := Edge{val.Block, i}
+		edge := Edge{val.Block, 0, i}
 		// If incoming edge for phi is not visited, assume top optimistically.
 		// According to rules of meet:
 		// 		Top ∩ any = any

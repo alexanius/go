@@ -313,7 +313,7 @@ func fuseBlockPlain(b *Block) bool {
 	}
 	for i, e := range c.Preds {
 		p := e.b
-		p.Succs[e.i] = Edge{c, i}
+		p.Succs[e.i] = Edge{c, 0, i}
 	}
 	f := b.Func
 	if f.Entry == b {

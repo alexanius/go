@@ -197,7 +197,7 @@ func (c *Conf) Fun(entry string, blocs ...bloc) fun {
 		}
 		// Connect to successors.
 		for _, succ := range c.succs {
-			b.AddEdgeTo(blocks[succ])
+			b.AddEdgeToP(blocks[succ], 0)
 		}
 	}
 	return fun{f, blocks, values}
