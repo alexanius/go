@@ -7,8 +7,13 @@
 // intermediate representation.
 package pgo
 
+import (
+	"internal/profile"
+)
+
 // Profile contains the processed data from the PGO profile.
 type Profile struct {
+	PProf *profile.Profile
 	// TotalWeight is the aggregated edge weights across the profile. This
 	// helps us determine the percentage threshold for hot/cold
 	// partitioning.
@@ -52,4 +57,3 @@ func emptyProfile() *Profile {
 func WeightInPercentage(value int64, total int64) float64 {
 	return (float64(value) / float64(total)) * 100
 }
-
