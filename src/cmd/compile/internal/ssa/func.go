@@ -82,6 +82,31 @@ type Func struct {
 
 	auxmap    auxmap             // map from aux values to opaque ids used by CSE
 	constants map[int64][]*Value // constants cache, keyed by constant value; users must check value's Op and Type
+
+	ProfTable NodeProfTable
+}
+
+// The type of a counter in node
+type Counter = int64
+
+// The type of index in the function counter table
+type T_index = *Block
+
+// The type of a table with counters
+type NodeProfTable = map[T_index]Counter
+
+// Set the counter c to the node n in the function fn
+func SetCounter(fn *Func, b *Block, c Counter) {
+	idx := b
+	t := fn.ProfTable
+	t[idx] = c
+}
+
+// Get the counter c to the node n in the function fn
+func GetCounter(fn *Func, b *Block) Counter {
+	idx := b
+	t := fn.ProfTable
+	return t[idx]
 }
 
 type LocalSlotSplitKey struct {
