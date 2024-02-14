@@ -221,6 +221,10 @@
 //		directory if that file exists, and applies it to the (transitive)
 //		dependencies of the main package (other packages are not affected).
 //		Special name "off" turns off PGO. The default is "auto".
+//	-pgobb
+//		enable loading basic block counters. Provides more precise information
+//		about cold and hot path of the program and allows compiler to do improve
+//		the profile-guided optimizations. Option can used only with PGO enabled
 //	-pkgdir dir
 //		install and load all packages from dir instead of the usual locations.
 //		For example, when building with a non-standard configuration,

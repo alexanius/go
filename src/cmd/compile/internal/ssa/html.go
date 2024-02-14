@@ -6,6 +6,7 @@ package ssa
 
 import (
 	"bytes"
+	"cmd/compile/internal/base"
 	"cmd/internal/src"
 	"fmt"
 	"html"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -210,6 +212,13 @@ button:hover {
     cursor: pointer;
 }
 
+dt.ast-prog-src {
+    padding: 0;
+    margin: 0;
+    float: left;
+    width: 30%
+}
+
 dl.ssa-gen {
     padding-left: 0;
 }
@@ -218,13 +227,13 @@ dt.ssa-prog-src {
     padding: 0;
     margin: 0;
     float: left;
-    width: 4em;
+    width: 10em;
 }
 
 dd.ssa-prog {
     padding: 0;
     margin-right: 0;
-    margin-left: 4em;
+    margin-left: 10em;
 }
 
 .dead-value {
@@ -892,7 +901,7 @@ func (w *HTMLWriter) WriteAST(phase string, buf *bytes.Buffer) {
 	lines := strings.Split(buf.String(), "\n")
 	var out strings.Builder
 
-	fmt.Fprint(&out, "<div>")
+	fmt.Fprint(&out, "<div><dl>")
 	for _, l := range lines {
 		l = strings.TrimSpace(l)
 		var escaped string
@@ -914,13 +923,26 @@ func (w *HTMLWriter) WriteAST(phase string, buf *bytes.Buffer) {
 				escaped = html.EscapeString(l)
 			}
 		}
-		if lineNo != "" {
+		if base.Flag.PgoBbProfile {
+			re := regexp.MustCompile(`^([0-9]+) (.+$)`)
+			counter := ""
+			match := re.FindStringSubmatch(escaped)
+			if match != nil {
+				counter = match[1]
+				escaped = match[2]
+			}
+			if lineNo != "" {
+				fmt.Fprintf(&out, "<div class=\"l%v line-number ast\"><dt class=\"ast-prog-src\">%s</dt><dd>%v</dd></div>", lineNo, counter, escaped)
+			} else {
+				fmt.Fprintf(&out, "<div class=\"ast\"><dt class=\"ast-prog-src\">%s</dt><dd>%v</dd></div>", counter, escaped)
+			}
+		} else if lineNo != "" {
 			fmt.Fprintf(&out, "<div class=\"l%v line-number ast\">%v</div>", lineNo, escaped)
 		} else {
 			fmt.Fprintf(&out, "<div class=\"ast\">%v</div>", escaped)
 		}
 	}
-	fmt.Fprint(&out, "</div>")
+	fmt.Fprint(&out, "</dl></div>")
 	w.WriteColumn(phase, phase, "allow-x-scroll", out.String())
 }
 
