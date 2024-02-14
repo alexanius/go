@@ -21,6 +21,7 @@ import (
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/liveness"
 	"cmd/compile/internal/objw"
+	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/rttype"
 	"cmd/compile/internal/ssa"
@@ -293,6 +294,9 @@ func (s *state) emitOpenDeferInfo() {
 // worker indicates which of the backend workers is doing the processing.
 func buildssa(fn *ir.Func, worker int) *ssa.Func {
 	name := ir.FuncName(fn)
+	if base.Flag.BbPgoProfile {
+		pgoir.PropagateCounters(fn)
+	}
 
 	abiSelf := abiForFunc(fn, ssaConfig.ABI0, ssaConfig.ABI1)
 
@@ -431,7 +435,11 @@ func buildssa(fn *ir.Func, worker int) *ssa.Func {
 	s.sp = s.entryNewValue0(ssa.OpSP, types.Types[types.TUINTPTR]) // TODO: use generic pointer type (unsafe.Pointer?) instead
 	s.sb = s.entryNewValue0(ssa.OpSB, types.Types[types.TUINTPTR])
 
-	s.startBlock(s.f.Entry)
+	var c int64
+	if fn.Body != nil && len(fn.Body) > 0 {
+		c = fn.Body[0].Counter()
+	}
+	s.startBlock(s.f.Entry, c)
 	s.vars[memVar] = s.startmem
 	if s.hasOpenDefers {
 		// Create the deferBits variable and stack slot.  deferBits is a
@@ -883,6 +891,8 @@ type state struct {
 	line []src.XPos
 	// the last line number processed; it may have been popped
 	lastPos src.XPos
+	// the last counter processed. Should be used only in cases when we can not set counter directly
+	lastCounter int64
 
 	// list of panic calls by function name and line number.
 	// Used to deduplicate panic calls.
@@ -960,11 +970,12 @@ var (
 )
 
 // startBlock sets the current block we're generating code in to b.
-func (s *state) startBlock(b *ssa.Block) {
+func (s *state) startBlock(b *ssa.Block, c int64) {
 	if s.curBlock != nil {
 		s.Fatalf("starting block %v when block %v has not ended", b, s.curBlock)
 	}
 	s.curBlock = b
+	b.Counter = c
 	s.vars = map[ir.Node]*ssa.Value{}
 	for n := range s.fwdVars {
 		delete(s.fwdVars, n)
@@ -1436,6 +1447,9 @@ func (s *state) stmt(n ir.Node) {
 	if s.curBlock == nil && n.Op() != ir.OLABEL {
 		return
 	}
+	if s.curBlock != nil {
+		s.curBlock.Counter = n.Counter()
+	}
 
 	s.stmtList(n.Init())
 	switch n.Op() {
@@ -1560,7 +1574,7 @@ func (s *state) stmt(n ir.Node) {
 			b := s.endBlock()
 			b.AddEdgeTo(lab.target)
 		}
-		s.startBlock(lab.target)
+		s.startBlock(lab.target, n.Counter())
 
 	case ir.OGOTO:
 		n := n.(*ir.BranchStmt)
@@ -1744,25 +1758,26 @@ func (s *state) stmt(n ir.Node) {
 		s.condBranch(n.Cond, bThen, bElse, likely)
 
 		if len(n.Body) != 0 {
-			s.startBlock(bThen)
+			s.startBlock(bThen, n.Body[0].Counter())
 			s.stmtList(n.Body)
 			if b := s.endBlock(); b != nil {
 				b.AddEdgeTo(bEnd)
 			}
 		}
 		if len(n.Else) != 0 {
-			s.startBlock(bElse)
+			s.startBlock(bElse, n.Else[0].Counter())
 			s.stmtList(n.Else)
 			if b := s.endBlock(); b != nil {
 				b.AddEdgeTo(bEnd)
 			}
 		}
-		s.startBlock(bEnd)
+		s.startBlock(bEnd, 0)
 
 	case ir.ORETURN:
 		n := n.(*ir.ReturnStmt)
 		s.stmtList(n.Results)
 		b := s.exit()
+		b.Counter = n.Counter()
 		b.Pos = s.lastPos.WithIsStmt()
 
 	case ir.OTAILCALL:
@@ -1818,7 +1833,12 @@ func (s *state) stmt(n ir.Node) {
 		b.AddEdgeTo(bCond)
 
 		// generate code to test condition
-		s.startBlock(bCond)
+		counter := n.Counter()
+		if n.Cond != nil {
+			counter = n.Cond.Counter()
+		}
+		b.Counter = counter
+		s.startBlock(bCond, counter)
 		if n.Cond != nil {
 			s.condBranch(n.Cond, bBody, bEnd, 1)
 		} else {
@@ -1841,7 +1861,7 @@ func (s *state) stmt(n ir.Node) {
 		}
 
 		// generate body
-		s.startBlock(bBody)
+		s.startBlock(bBody, counter)
 		s.stmtList(n.Body)
 
 		// tear down continue/break
@@ -1858,7 +1878,10 @@ func (s *state) stmt(n ir.Node) {
 		}
 
 		// generate incr
-		s.startBlock(bIncr)
+		if n.Post != nil {
+			counter = n.Post.Counter()
+		}
+		s.startBlock(bIncr, counter)
 		if n.Post != nil {
 			s.stmt(n.Post)
 		}
@@ -1871,7 +1894,9 @@ func (s *state) stmt(n ir.Node) {
 			}
 		}
 
-		s.startBlock(bEnd)
+		s.startBlock(bEnd, counter)
+		bBody.Counter = bIncr.Counter
+		bEnd.Counter = n.Counter()
 
 	case ir.OSWITCH, ir.OSELECT:
 		// These have been mostly rewritten by the front end into their Nbody fields.
@@ -1915,7 +1940,7 @@ func (s *state) stmt(n ir.Node) {
 			b.Kind = ssa.BlockExit
 			b.SetControl(m)
 		}
-		s.startBlock(bEnd)
+		s.startBlock(bEnd, n.Counter())
 
 	case ir.OJUMPTABLE:
 		n := n.(*ir.JumpTableStmt)
@@ -1960,7 +1985,7 @@ func (s *state) stmt(n ir.Node) {
 		b.Likely = ssa.BranchLikely // TODO: assumes missing the table entirely is unlikely. True?
 
 		// Build jump table block.
-		s.startBlock(jt)
+		s.startBlock(jt, n.Counter())
 		jt.Pos = n.Pos()
 		if base.Flag.Cfg.SpectreIndex {
 			idx = s.newValue2(ssa.OpSpectreSliceIndex, t, idx, width)
@@ -1993,7 +2018,7 @@ func (s *state) stmt(n ir.Node) {
 		}
 		s.endBlock()
 
-		s.startBlock(bEnd)
+		s.startBlock(bEnd, n.Counter())
 
 	case ir.OINTERFACESWITCH:
 		n := n.(*ir.InterfaceSwitchStmt)
@@ -2048,7 +2073,7 @@ func (s *state) stmt(n ir.Node) {
 
 			// At loop head, get pointer to the cache entry.
 			//   e := &cache.Entries[hash&mask]
-			s.startBlock(loopHead)
+			s.startBlock(loopHead, n.Counter())
 			entries := s.newValue2(ssa.OpAddPtr, typs.UintptrPtr, cache, s.uintptrConstant(uint64(s.config.PtrSize)))
 			idx := s.newValue2(and, typs.Uintptr, s.variable(hashVar, typs.Uintptr), mask)
 			idx = s.newValue2(mul, typs.Uintptr, idx, s.uintptrConstant(uint64(3*s.config.PtrSize)))
@@ -2068,7 +2093,7 @@ func (s *state) stmt(n ir.Node) {
 
 			// Look for an empty entry, the tombstone for this hash table.
 			//   if e.Typ == nil { goto miss }
-			s.startBlock(loopBody)
+			s.startBlock(loopBody, n.Counter())
 			cmp2 := s.newValue2(ssa.OpEqPtr, typs.Bool, eTyp, s.constNil(typs.BytePtr))
 			b = s.endBlock()
 			b.Kind = ssa.BlockIf
@@ -2079,7 +2104,7 @@ func (s *state) stmt(n ir.Node) {
 			// On a hit, load the data fields of the cache entry.
 			//   Case = e.Case
 			//   Itab = e.Itab
-			s.startBlock(cacheHit)
+			s.startBlock(cacheHit, n.Counter())
 			eCase := s.newValue2(ssa.OpLoad, typs.Int, s.newValue1I(ssa.OpOffPtr, typs.IntPtr, s.config.PtrSize, e), s.mem())
 			eItab := s.newValue2(ssa.OpLoad, typs.BytePtr, s.newValue1I(ssa.OpOffPtr, typs.BytePtrPtr, 2*s.config.PtrSize, e), s.mem())
 			s.assign(n.Case, eCase, false, 0)
@@ -2088,7 +2113,7 @@ func (s *state) stmt(n ir.Node) {
 			b.AddEdgeTo(merge)
 
 			// On a miss, call into the runtime to get the answer.
-			s.startBlock(cacheMiss)
+			s.startBlock(cacheMiss, n.Counter())
 		}
 
 		r := s.rtcall(ir.Syms.InterfaceSwitch, true, []*types.Type{typs.Int, typs.BytePtr}, d, t)
@@ -2100,7 +2125,7 @@ func (s *state) stmt(n ir.Node) {
 			b := s.endBlock()
 			b.Kind = ssa.BlockPlain
 			b.AddEdgeTo(merge)
-			s.startBlock(merge)
+			s.startBlock(merge, n.Counter())
 		}
 
 	case ir.OCHECKNIL:
@@ -2781,7 +2806,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			// TODO(mdempsky): Investigate using "len != 0" instead of "ptr != nil".
 			cond := s.newValue2(ssa.OpNeqPtr, types.Types[types.TBOOL], ptr, s.constNil(ptr.Type))
 			zerobase := s.newValue1A(ssa.OpAddr, ptr.Type, ir.Syms.Zerobase, s.sb)
-			ptr = s.ternary(cond, ptr, zerobase)
+			ptr = s.ternary(cond, ptr, zerobase, n.Counter(), 0)
 		}
 		len := s.newValue1(ssa.OpStringLen, types.Types[types.TINT], str)
 		return s.newValue3(ssa.OpSliceMake, n.Type(), ptr, len, len)
@@ -3164,14 +3189,14 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			b.AddEdgeTo(bRight)
 		}
 
-		s.startBlock(bRight)
+		s.startBlock(bRight, n.Counter())
 		er := s.expr(n.Y)
 		s.vars[n] = er
 
 		b = s.endBlock()
 		b.AddEdgeTo(bResult)
 
-		s.startBlock(bResult)
+		s.startBlock(bResult, n.Counter())
 		return s.variable(n, types.Types[types.TBOOL])
 	case ir.OCOMPLEX:
 		n := n.(*ir.BinaryExpr)
@@ -3264,6 +3289,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			a := s.expr(n.X)
 			i := s.expr(n.Index)
 			len := s.newValue1(ssa.OpStringLen, types.Types[types.TINT], a)
+			s.lastCounter = n.Counter()
 			i = s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded())
 			ptrtyp := s.f.Config.Types.BytePtr
 			ptr := s.newValue1(ssa.OpStringPtr, ptrtyp, a)
@@ -3286,12 +3312,14 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 					// Bounds check will never succeed.  Might as well
 					// use constants for the bounds check.
 					z := s.constInt(types.Types[types.TINT], 0)
+					s.lastCounter = n.Counter()
 					s.boundsCheck(z, z, ssa.BoundsIndex, false)
 					// The return value won't be live, return junk.
 					// But not quite junk, in case bounds checks are turned off. See issue 48092.
 					return s.zeroVal(n.Type())
 				}
 				len := s.constInt(types.Types[types.TINT], bound)
+				s.lastCounter = n.Counter()
 				s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded()) // checks i == 0
 				return s.newValue1I(ssa.OpArraySelect, n.Type(), 0, a)
 			}
@@ -3374,6 +3402,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		if n.Max != nil {
 			k = s.expr(n.Max)
 		}
+		s.lastCounter = n.Counter()
 		p, l, c := s.slice(v, i, j, k, n.Bounded())
 		if check {
 			// Emit checkptr instrumentation after bound check to prevent false positive, see #46938.
@@ -3404,6 +3433,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		nelem := n.Type().Elem().NumElem()
 		arrlen := s.constInt(types.Types[types.TINT], nelem)
 		cap := s.newValue1(ssa.OpSliceLen, types.Types[types.TINT], v)
+		s.lastCounter = n.Counter()
 		s.boundsCheck(arrlen, cap, ssa.BoundsConvert, false)
 		op := ssa.OpSlicePtr
 		if nelem == 0 {
@@ -3584,7 +3614,7 @@ func (s *state) append(n *ir.CallExpr, inplace bool) *ssa.Value {
 	b.AddEdgeTo(assign)
 
 	// Call growslice
-	s.startBlock(grow)
+	s.startBlock(grow, n.Counter())
 	taddr := s.expr(n.Fun)
 	r := s.rtcall(ir.Syms.Growslice, true, []*types.Type{n.Type()}, p, l, c, nargs, taddr)
 
@@ -3613,7 +3643,7 @@ func (s *state) append(n *ir.CallExpr, inplace bool) *ssa.Value {
 	b.AddEdgeTo(assign)
 
 	// assign new elements to slots
-	s.startBlock(assign)
+	s.startBlock(assign, n.Counter())
 	p = s.variable(ptrVar, pt)                      // generates phi for ptr
 	l = s.variable(lenVar, types.Types[types.TINT]) // generates phi for len
 	if !inplace {
@@ -3760,17 +3790,17 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 		switch n.Op() {
 		case ir.OMIN:
 			// a < x ? a : x
-			return s.ternary(s.newValue2(lt, types.Types[types.TBOOL], a, x), a, x)
+			return s.ternary(s.newValue2(lt, types.Types[types.TBOOL], a, x), a, x, n.Counter()/2, n.Counter()-n.Counter()/2)
 		case ir.OMAX:
 			// x < a ? a : x
-			return s.ternary(s.newValue2(lt, types.Types[types.TBOOL], x, a), a, x)
+			return s.ternary(s.newValue2(lt, types.Types[types.TBOOL], x, a), a, x, n.Counter()/2, n.Counter()-n.Counter()/2)
 		}
 		panic("unreachable")
 	})
 }
 
 // ternary emits code to evaluate cond ? x : y.
-func (s *state) ternary(cond, x, y *ssa.Value) *ssa.Value {
+func (s *state) ternary(cond, x, y *ssa.Value, thenC, elseC int64) *ssa.Value {
 	// Note that we need a new ternaryVar each time (unlike okVar where we can
 	// reuse the variable) because it might have a different type every time.
 	ternaryVar := ssaMarker("ternary")
@@ -3785,15 +3815,15 @@ func (s *state) ternary(cond, x, y *ssa.Value) *ssa.Value {
 	b.AddEdgeTo(bThen)
 	b.AddEdgeTo(bElse)
 
-	s.startBlock(bThen)
+	s.startBlock(bThen, thenC)
 	s.vars[ternaryVar] = x
 	s.endBlock().AddEdgeTo(bEnd)
 
-	s.startBlock(bElse)
+	s.startBlock(bElse, elseC)
 	s.vars[ternaryVar] = y
 	s.endBlock().AddEdgeTo(bEnd)
 
-	s.startBlock(bEnd)
+	s.startBlock(bEnd, elseC+thenC)
 	r := s.variable(ternaryVar, x.Type)
 	delete(s.vars, ternaryVar)
 	return r
@@ -3810,7 +3840,7 @@ func (s *state) condBranch(cond ir.Node, yes, no *ssa.Block, likely int8) {
 		mid := s.f.NewBlock(ssa.BlockPlain)
 		s.stmtList(cond.Init())
 		s.condBranch(cond.X, mid, no, max8(likely, 0))
-		s.startBlock(mid)
+		s.startBlock(mid, cond.Counter())
 		s.condBranch(cond.Y, yes, no, likely)
 		return
 		// Note: if likely==1, then both recursive calls pass 1.
@@ -3824,7 +3854,7 @@ func (s *state) condBranch(cond ir.Node, yes, no *ssa.Block, likely int8) {
 		mid := s.f.NewBlock(ssa.BlockPlain)
 		s.stmtList(cond.Init())
 		s.condBranch(cond.X, yes, mid, min8(likely, 0))
-		s.startBlock(mid)
+		s.startBlock(mid, cond.Counter())
 		s.condBranch(cond.Y, yes, no, likely)
 		return
 		// Note: if likely==-1, then both recursive calls pass -1.
@@ -3927,6 +3957,7 @@ func (s *state) assignWhichMayOverlap(left ir.Node, right *ssa.Value, deref bool
 				// The bounds check must fail.  Might as well
 				// ignore the actual index and just use zeros.
 				z := s.constInt(types.Types[types.TINT], 0)
+				s.lastCounter = left.Counter()
 				s.boundsCheck(z, z, ssa.BoundsIndex, false)
 				return
 			}
@@ -3935,6 +3966,7 @@ func (s *state) assignWhichMayOverlap(left ir.Node, right *ssa.Value, deref bool
 			}
 			// Rewrite to a = [1]{v}
 			len := s.constInt(types.Types[types.TINT], 1)
+			s.lastCounter = left.Counter()
 			s.boundsCheck(i, len, ssa.BoundsIndex, false) // checks i == 0
 			v := s.newValue1(ssa.OpArrayMake1, t, right)
 			s.assign(left.X, v, false, 0)
@@ -4411,17 +4443,17 @@ func InitTables() {
 				b.Likely = ssa.BranchLikely
 
 				// We have atomic instructions - use it directly.
-				s.startBlock(bTrue)
+				s.startBlock(bTrue, n.Counter())
 				emit(s, n, args, op1, typ)
 				s.endBlock().AddEdgeTo(bEnd)
 
 				// Use original instruction sequence.
-				s.startBlock(bFalse)
+				s.startBlock(bFalse, n.Counter())
 				emit(s, n, args, op0, typ)
 				s.endBlock().AddEdgeTo(bEnd)
 
 				// Merge results.
-				s.startBlock(bEnd)
+				s.startBlock(bEnd, n.Counter())
 			}
 			if rtyp == types.TNIL {
 				return nil
@@ -4658,17 +4690,17 @@ func InitTables() {
 			b.Likely = ssa.BranchLikely // >= haswell cpus are common
 
 			// We have the intrinsic - use it directly.
-			s.startBlock(bTrue)
+			s.startBlock(bTrue, n.Counter())
 			s.vars[n] = s.newValue3(ssa.OpFMA, types.Types[types.TFLOAT64], args[0], args[1], args[2])
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Call the pure Go version.
-			s.startBlock(bFalse)
+			s.startBlock(bFalse, n.Counter())
 			s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
-			s.startBlock(bEnd)
+			s.startBlock(bEnd, n.Counter())
 			return s.variable(n, types.Types[types.TFLOAT64])
 		},
 		sys.AMD64)
@@ -4691,17 +4723,17 @@ func InitTables() {
 			b.Likely = ssa.BranchLikely
 
 			// We have the intrinsic - use it directly.
-			s.startBlock(bTrue)
+			s.startBlock(bTrue, n.Counter())
 			s.vars[n] = s.newValue3(ssa.OpFMA, types.Types[types.TFLOAT64], args[0], args[1], args[2])
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Call the pure Go version.
-			s.startBlock(bFalse)
+			s.startBlock(bFalse, n.Counter())
 			s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
-			s.startBlock(bEnd)
+			s.startBlock(bEnd, n.Counter())
 			return s.variable(n, types.Types[types.TFLOAT64])
 		},
 		sys.ARM)
@@ -4724,17 +4756,17 @@ func InitTables() {
 			b.Likely = ssa.BranchLikely // most machines have sse4.1 nowadays
 
 			// We have the intrinsic - use it directly.
-			s.startBlock(bTrue)
+			s.startBlock(bTrue, n.Counter())
 			s.vars[n] = s.newValue1(op, types.Types[types.TFLOAT64], args[0])
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Call the pure Go version.
-			s.startBlock(bFalse)
+			s.startBlock(bFalse, n.Counter())
 			s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
-			s.startBlock(bEnd)
+			s.startBlock(bEnd, n.Counter())
 			return s.variable(n, types.Types[types.TFLOAT64])
 		}
 	}
@@ -4940,17 +4972,17 @@ func InitTables() {
 			b.Likely = ssa.BranchLikely // most machines have popcnt nowadays
 
 			// We have the intrinsic - use it directly.
-			s.startBlock(bTrue)
+			s.startBlock(bTrue, n.Counter())
 			s.vars[n] = s.newValue1(op, types.Types[types.TINT], args[0])
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Call the pure Go version.
-			s.startBlock(bFalse)
+			s.startBlock(bFalse, n.Counter())
 			s.vars[n] = s.callResult(n, callNormal) // types.Types[TINT]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
-			s.startBlock(bEnd)
+			s.startBlock(bEnd, n.Counter())
 			return s.variable(n, types.Types[types.TINT])
 		}
 	}
@@ -5229,7 +5261,7 @@ func (s *state) openDeferSave(t *types.Type, val *ssa.Value) *ssa.Value {
 func (s *state) openDeferExit() {
 	deferExit := s.f.NewBlock(ssa.BlockPlain)
 	s.endBlock().AddEdgeTo(deferExit)
-	s.startBlock(deferExit)
+	s.startBlock(deferExit, 0)
 	s.lastDeferExit = deferExit
 	s.lastDeferCount = len(s.openDefers)
 	zeroval := s.constInt8(types.Types[types.TUINT8], 0)
@@ -5251,7 +5283,7 @@ func (s *state) openDeferExit() {
 		b.AddEdgeTo(bEnd)
 		b.AddEdgeTo(bCond)
 		bCond.AddEdgeTo(bEnd)
-		s.startBlock(bCond)
+		s.startBlock(bCond, 0)
 
 		// Clear this bit in deferBits and force store back to stack, so
 		// we will not try to re-run this defer call if this defer call panics.
@@ -5292,7 +5324,7 @@ func (s *state) openDeferExit() {
 		}
 
 		s.endBlock()
-		s.startBlock(bEnd)
+		s.startBlock(bEnd, 0)
 	}
 }
 
@@ -5442,7 +5474,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 			b.Kind = ssa.BlockPlain
 			curb := s.f.NewBlock(ssa.BlockPlain)
 			b.AddEdgeTo(curb)
-			s.startBlock(curb)
+			s.startBlock(curb, n.Counter())
 		}
 
 		for i, n := range args {
@@ -5513,11 +5545,12 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 		b.AddEdgeTo(bNext)
 		// Add recover edge to exit code.
 		r := s.f.NewBlock(ssa.BlockPlain)
-		s.startBlock(r)
-		s.exit()
+		s.startBlock(r, n.Counter())
+		bb := s.exit()
+		bb.Counter = 0 // We assume, that panic is always zero
 		b.AddEdgeTo(r)
 		b.Likely = ssa.BranchLikely
-		s.startBlock(bNext)
+		s.startBlock(bNext, n.Counter())
 	}
 
 	if len(res) == 0 || k != callNormal {
@@ -5628,6 +5661,7 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 			a := s.expr(n.X)
 			i := s.expr(n.Index)
 			len := s.newValue1(ssa.OpSliceLen, types.Types[types.TINT], a)
+			s.lastCounter = n.Counter()
 			i = s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded())
 			p := s.newValue1(ssa.OpSlicePtr, t, a)
 			return s.newValue2(ssa.OpPtrIndex, t, p, i)
@@ -5635,6 +5669,7 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 			a := s.addr(n.X)
 			i := s.expr(n.Index)
 			len := s.constInt(types.Types[types.TINT], n.X.Type().NumElem())
+			s.lastCounter = n.Counter()
 			i = s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded())
 			return s.newValue2(ssa.OpPtrIndex, types.NewPtr(n.X.Type().Elem()), a, i)
 		}
@@ -5790,6 +5825,7 @@ func (s *state) boundsCheck(idx, len *ssa.Value, kind ssa.BoundsKind, bounded bo
 	}
 
 	bNext := s.f.NewBlock(ssa.BlockPlain)
+	bNext.Counter = s.lastCounter
 	bPanic := s.f.NewBlock(ssa.BlockExit)
 
 	if !idx.Type.IsSigned() {
@@ -5826,7 +5862,7 @@ func (s *state) boundsCheck(idx, len *ssa.Value, kind ssa.BoundsKind, bounded bo
 	b.AddEdgeTo(bNext)
 	b.AddEdgeTo(bPanic)
 
-	s.startBlock(bPanic)
+	s.startBlock(bPanic, 0)
 	if Arch.LinkArch.Family == sys.Wasm {
 		// TODO(khr): figure out how to do "register" based calling convention for bounds checks.
 		// Should be similar to gcWriteBarrier, but I can't make it work.
@@ -5835,7 +5871,7 @@ func (s *state) boundsCheck(idx, len *ssa.Value, kind ssa.BoundsKind, bounded bo
 		mem := s.newValue3I(ssa.OpPanicBounds, types.TypeMem, int64(kind), idx, len, s.mem())
 		s.endBlock().SetControl(mem)
 	}
-	s.startBlock(bNext)
+	s.startBlock(bNext, s.lastCounter)
 
 	// In Spectre index mode, apply an appropriate mask to avoid speculative out-of-bounds accesses.
 	if base.Flag.Cfg.SpectreIndex {
@@ -5863,14 +5899,14 @@ func (s *state) check(cmp *ssa.Value, fn *obj.LSym) {
 	if bPanic == nil {
 		bPanic = s.f.NewBlock(ssa.BlockPlain)
 		s.panics[fl] = bPanic
-		s.startBlock(bPanic)
+		s.startBlock(bPanic, 0)
 		// The panic call takes/returns memory to ensure that the right
 		// memory state is observed if the panic happens.
 		s.rtcall(fn, false, nil)
 	}
 	b.AddEdgeTo(bNext)
 	b.AddEdgeTo(bPanic)
-	s.startBlock(bNext)
+	s.startBlock(bNext, 0)
 }
 
 func (s *state) intDivide(n ir.Node, a, b *ssa.Value) *ssa.Value {
@@ -6271,14 +6307,14 @@ func (s *state) uint64Tofloat(cvttab *u642fcvtTab, n ir.Node, x *ssa.Value, ft, 
 	bAfter := s.f.NewBlock(ssa.BlockPlain)
 
 	b.AddEdgeTo(bThen)
-	s.startBlock(bThen)
+	s.startBlock(bThen, n.Counter())
 	a0 := s.newValue1(cvttab.cvt2F, tt, x)
 	s.vars[n] = a0
 	s.endBlock()
 	bThen.AddEdgeTo(bAfter)
 
 	b.AddEdgeTo(bElse)
-	s.startBlock(bElse)
+	s.startBlock(bElse, n.Counter())
 	one := cvttab.one(s, ft, 1)
 	y := s.newValue2(cvttab.and, ft, x, one)
 	z := s.newValue2(cvttab.rsh, ft, x, one)
@@ -6289,7 +6325,7 @@ func (s *state) uint64Tofloat(cvttab *u642fcvtTab, n ir.Node, x *ssa.Value, ft, 
 	s.endBlock()
 	bElse.AddEdgeTo(bAfter)
 
-	s.startBlock(bAfter)
+	s.startBlock(bAfter, n.Counter())
 	return s.variable(n, n.Type())
 }
 
@@ -6332,14 +6368,14 @@ func (s *state) uint32Tofloat(cvttab *u322fcvtTab, n ir.Node, x *ssa.Value, ft, 
 	bAfter := s.f.NewBlock(ssa.BlockPlain)
 
 	b.AddEdgeTo(bThen)
-	s.startBlock(bThen)
+	s.startBlock(bThen, n.Counter())
 	a0 := s.newValue1(cvttab.cvtI2F, tt, x)
 	s.vars[n] = a0
 	s.endBlock()
 	bThen.AddEdgeTo(bAfter)
 
 	b.AddEdgeTo(bElse)
-	s.startBlock(bElse)
+	s.startBlock(bElse, n.Counter())
 	a1 := s.newValue1(ssa.OpCvt32to64F, types.Types[types.TFLOAT64], x)
 	twoToThe32 := s.constFloat64(types.Types[types.TFLOAT64], float64(1<<32))
 	a2 := s.newValue2(ssa.OpAdd64F, types.Types[types.TFLOAT64], a1, twoToThe32)
@@ -6349,7 +6385,7 @@ func (s *state) uint32Tofloat(cvttab *u322fcvtTab, n ir.Node, x *ssa.Value, ft, 
 	s.endBlock()
 	bElse.AddEdgeTo(bAfter)
 
-	s.startBlock(bAfter)
+	s.startBlock(bAfter, n.Counter())
 	return s.variable(n, n.Type())
 }
 
@@ -6386,13 +6422,13 @@ func (s *state) referenceTypeBuiltin(n *ir.UnaryExpr, x *ssa.Value) *ssa.Value {
 
 	// length/capacity of a nil map/chan is zero
 	b.AddEdgeTo(bThen)
-	s.startBlock(bThen)
+	s.startBlock(bThen, n.Counter())
 	s.vars[n] = s.zeroVal(lenType)
 	s.endBlock()
 	bThen.AddEdgeTo(bAfter)
 
 	b.AddEdgeTo(bElse)
-	s.startBlock(bElse)
+	s.startBlock(bElse, n.Counter())
 	switch n.Op() {
 	case ir.OLEN:
 		// length is stored in the first word for map/chan
@@ -6407,7 +6443,7 @@ func (s *state) referenceTypeBuiltin(n *ir.UnaryExpr, x *ssa.Value) *ssa.Value {
 	s.endBlock()
 	bElse.AddEdgeTo(bAfter)
 
-	s.startBlock(bAfter)
+	s.startBlock(bAfter, n.Counter())
 	return s.variable(n, lenType)
 }
 
@@ -6494,14 +6530,14 @@ func (s *state) floatToUint(cvttab *f2uCvtTab, n ir.Node, x *ssa.Value, ft, tt *
 	bAfter := s.f.NewBlock(ssa.BlockPlain)
 
 	b.AddEdgeTo(bThen)
-	s.startBlock(bThen)
+	s.startBlock(bThen, n.Counter())
 	a0 := s.newValue1(cvttab.cvt2U, tt, x)
 	s.vars[n] = a0
 	s.endBlock()
 	bThen.AddEdgeTo(bAfter)
 
 	b.AddEdgeTo(bElse)
-	s.startBlock(bElse)
+	s.startBlock(bElse, n.Counter())
 	y := s.newValue2(cvttab.subf, ft, x, cutoff)
 	y = s.newValue1(cvttab.cvt2U, tt, y)
 	z := cvttab.intValue(s, tt, int64(-cvttab.cutoff))
@@ -6510,7 +6546,7 @@ func (s *state) floatToUint(cvttab *f2uCvtTab, n ir.Node, x *ssa.Value, ft, tt *
 	s.endBlock()
 	bElse.AddEdgeTo(bAfter)
 
-	s.startBlock(bAfter)
+	s.startBlock(bAfter, n.Counter())
 	return s.variable(n, n.Type())
 }
 
@@ -6586,11 +6622,11 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 
 			if !commaok {
 				// On failure, panic by calling panicnildottype.
-				s.startBlock(bFail)
+				s.startBlock(bFail, 0)
 				s.rtcall(ir.Syms.Panicnildottype, false, nil, target)
 
 				// On success, return (perhaps modified) input interface.
-				s.startBlock(bOk)
+				s.startBlock(bOk, 0)
 				if src.IsEmptyInterface() {
 					res = iface // Use input interface unchanged.
 					return
@@ -6603,7 +6639,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 				return
 			}
 
-			s.startBlock(bOk)
+			s.startBlock(bOk, 0)
 			// nonempty -> empty
 			// Need to load type from itab
 			off := s.newValue1I(ssa.OpOffPtr, byteptr, rttype.ITab.OffsetOf("Type"), itab)
@@ -6611,7 +6647,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 			s.endBlock()
 
 			// itab is nil, might as well use that as the nil result.
-			s.startBlock(bFail)
+			s.startBlock(bFail, 0)
 			s.vars[typVar] = itab
 			s.endBlock()
 
@@ -6619,7 +6655,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 			bEnd := s.f.NewBlock(ssa.BlockPlain)
 			bOk.AddEdgeTo(bEnd)
 			bFail.AddEdgeTo(bEnd)
-			s.startBlock(bEnd)
+			s.startBlock(bEnd, 0)
 			idata := s.newValue1(ssa.OpIData, byteptr, iface)
 			res = s.newValue2(ssa.OpIMake, dst, s.variable(typVar, byteptr), idata)
 			resok = cond
@@ -6646,7 +6682,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 		b.AddEdgeTo(bNonNil)
 		b.AddEdgeTo(bNil)
 
-		s.startBlock(bNil)
+		s.startBlock(bNil, 0)
 		if commaok {
 			s.vars[typVar] = itab // which will be nil
 			b := s.endBlock()
@@ -6657,7 +6693,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 		}
 
 		// Get typ, possibly by loading out of itab.
-		s.startBlock(bNonNil)
+		s.startBlock(bNonNil, 0)
 		typ := itab
 		if !src.IsEmptyInterface() {
 			typ = s.load(byteptr, s.newValue1I(ssa.OpOffPtr, byteptr, rttype.ITab.OffsetOf("Type"), itab))
@@ -6715,7 +6751,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 
 				// At loop head, get pointer to the cache entry.
 				//   e := &cache.Entries[hash&mask]
-				s.startBlock(loopHead)
+				s.startBlock(loopHead, 0)
 				idx := s.newValue2(and, typs.Uintptr, s.variable(hashVar, typs.Uintptr), mask)
 				idx = s.newValue2(mul, typs.Uintptr, idx, s.uintptrConstant(uint64(2*s.config.PtrSize)))
 				idx = s.newValue2(add, typs.Uintptr, idx, s.uintptrConstant(uint64(s.config.PtrSize)))
@@ -6735,7 +6771,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 
 				// Look for an empty entry, the tombstone for this hash table.
 				//   if e.Typ == nil { goto miss }
-				s.startBlock(loopBody)
+				s.startBlock(loopBody, 0)
 				cmp2 := s.newValue2(ssa.OpEqPtr, typs.Bool, eTyp, s.constNil(typs.BytePtr))
 				b = s.endBlock()
 				b.Kind = ssa.BlockIf
@@ -6745,14 +6781,14 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 
 				// On a hit, load the data fields of the cache entry.
 				//   Itab = e.Itab
-				s.startBlock(cacheHit)
+				s.startBlock(cacheHit, 0)
 				eItab := s.newValue2(ssa.OpLoad, typs.BytePtr, s.newValue1I(ssa.OpOffPtr, typs.BytePtrPtr, s.config.PtrSize, e), s.mem())
 				s.vars[typVar] = eItab
 				b = s.endBlock()
 				b.AddEdgeTo(bMerge)
 
 				// On a miss, call into the runtime to get the answer.
-				s.startBlock(cacheMiss)
+				s.startBlock(cacheMiss, 0)
 			}
 		}
 
@@ -6773,7 +6809,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 		b.AddEdgeTo(bMerge)
 
 		// Build resulting interface.
-		s.startBlock(bMerge)
+		s.startBlock(bMerge, 0)
 		itab = s.variable(typVar, byteptr)
 		var ok *ssa.Value
 		if commaok {
@@ -6822,7 +6858,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 
 	if !commaok {
 		// on failure, panic by calling panicdottype
-		s.startBlock(bFail)
+		s.startBlock(bFail, 0)
 		taddr := source
 		if taddr == nil {
 			taddr = s.reflectType(src)
@@ -6834,7 +6870,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 		}
 
 		// on success, return data from interface
-		s.startBlock(bOk)
+		s.startBlock(bOk, 0)
 		if direct {
 			return s.newValue1(ssa.OpIData, dst, iface), nil
 		}
@@ -6850,7 +6886,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 	valVar := ssaMarker("val")
 
 	// type assertion succeeded
-	s.startBlock(bOk)
+	s.startBlock(bOk, 0)
 	if tmp == nil {
 		if direct {
 			s.vars[valVar] = s.newValue1(ssa.OpIData, dst, iface)
@@ -6867,7 +6903,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 	bOk.AddEdgeTo(bEnd)
 
 	// type assertion failed
-	s.startBlock(bFail)
+	s.startBlock(bFail, 0)
 	if tmp == nil {
 		s.vars[valVar] = s.zeroVal(dst)
 	} else {
@@ -6878,7 +6914,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 	bFail.AddEdgeTo(bEnd)
 
 	// merge point
-	s.startBlock(bEnd)
+	s.startBlock(bEnd, 0)
 	if tmp == nil {
 		res = s.variable(valVar, dst)
 		delete(s.vars, valVar) // no practical effect, just to indicate typVar is no longer live.
@@ -7277,7 +7313,6 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			valueToProgAfter[i] = nil
 		}
 	}
-
 	// If the very first instruction is not tagged as a statement,
 	// debuggers may attribute it to previous function in program.
 	firstPos := src.NoXPos
@@ -7624,7 +7659,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			} else {
 				s = "   " // most value and branch strings are 2-3 characters long
 			}
-			f.Logf(" %-6s\t%.5d (%s)\t%s\n", s, p.Pc, p.InnermostLineNumber(), p.InstructionString())
+			f.Logf(" %-10s\t%.5d (%s)\t%s\n", s, p.Pc, p.InnermostLineNumber(), p.InstructionString())
 		}
 	}
 	if f.HTMLWriter != nil { // spew to ssa.html
@@ -7941,10 +7976,10 @@ func (s *state) extendIndex(idx, len *ssa.Value, kind ssa.BoundsKind, bounded bo
 		b.AddEdgeTo(bNext)
 		b.AddEdgeTo(bPanic)
 
-		s.startBlock(bPanic)
+		s.startBlock(bPanic, 0)
 		mem := s.newValue4I(ssa.OpPanicExtend, types.TypeMem, int64(kind), hi, lo, len, s.mem())
 		s.endBlock().SetControl(mem)
-		s.startBlock(bNext)
+		s.startBlock(bNext, 0)
 
 		return lo
 	}
