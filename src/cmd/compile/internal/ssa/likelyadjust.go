@@ -5,6 +5,7 @@
 package ssa
 
 import (
+	"cmd/compile/internal/base"
 	"fmt"
 )
 
@@ -127,11 +128,20 @@ func likelyadjust(f *Func) {
 	b2l := nest.b2l
 
 	for _, b := range po {
+		usedPgo := false
 		switch b.Kind {
 		case BlockExit:
-			// Very unlikely.
-			local[b.ID] = blEXIT
-			certain[b.ID] = blEXIT
+			if base.Flag.BbPgoProfile &&
+				len(b.Preds) == 1 &&
+				b.Preds[0].b.Counter != 0 &&
+				b.Counter != 0 {
+				// If we actualy visit this block - it is not very unlikely
+				usedPgo = true
+			} else {
+				// Very unlikely.
+				local[b.ID] = blEXIT
+				certain[b.ID] = blEXIT
+			}
 
 			// Ret, it depends.
 		case BlockRet, BlockRetJmp:
@@ -188,28 +198,72 @@ func likelyadjust(f *Func) {
 						f.Warnl(b.Pos, "Branch prediction rule stay in loop%s",
 							describePredictionAgrees(b, prediction))
 					}
-
 				} else {
-					// Lacking loop structure, fall back on heuristics.
-					if certain[b1] > certain[b0] {
-						prediction = BranchLikely
-						if f.pass.debug > 0 {
-							describeBranchPrediction(f, b, certain[b0], certain[b1], prediction)
+					if base.Flag.BbPgoProfile &&
+						b.Succs[0].b.Counter+b.Succs[1].b.Counter > 0 &&
+						len(b.Succs[0].b.Preds) == 1 &&
+						len(b.Succs[1].b.Preds) == 1 {
+
+						if b.Succs[0].b.Counter == 0 && len(b.Succs[0].b.Succs) == 1 {
+							b.Succs[0].b.Counter = b.Succs[0].b.Succs[0].b.Counter
 						}
-					} else if certain[b0] > certain[b1] {
-						prediction = BranchUnlikely
-						if f.pass.debug > 0 {
-							describeBranchPrediction(f, b, certain[b1], certain[b0], prediction)
+						if b.Succs[1].b.Counter == 0 && len(b.Succs[1].b.Succs) == 1 {
+							b.Succs[1].b.Counter = b.Succs[1].b.Succs[0].b.Counter
 						}
-					} else if local[b1] > local[b0] {
-						prediction = BranchLikely
-						if f.pass.debug > 0 {
-							describeBranchPrediction(f, b, local[b0], local[b1], prediction)
+
+						if b.Succs[1].b.Counter == 0 {
+							prediction = BranchLikely
+							usedPgo = true
+							if f.pass.debug > 0 {
+								describeBranchPrediction(f, b, certain[b0], certain[b1], prediction)
+							}
+						} else if b.Succs[0].b.Counter == 0 {
+							prediction = BranchUnlikely
+							usedPgo = true
+							if f.pass.debug > 0 {
+								describeBranchPrediction(f, b, certain[b1], certain[b0], prediction)
+							}
+						} else {
+							ratio := float32(b.Succs[0].b.Counter) / float32(b.Succs[1].b.Counter)
+							// We change likelyness if the difference between to branches is big enough
+							if ratio > 1.2 {
+								prediction = BranchLikely
+								usedPgo = true
+								if f.pass.debug > 0 {
+									describeBranchPrediction(f, b, certain[b0], certain[b1], prediction)
+								}
+							} else if ratio < 0.8 {
+								prediction = BranchUnlikely
+								usedPgo = true
+								if f.pass.debug > 0 {
+									describeBranchPrediction(f, b, certain[b1], certain[b0], prediction)
+								}
+							}
 						}
-					} else if local[b0] > local[b1] {
-						prediction = BranchUnlikely
-						if f.pass.debug > 0 {
-							describeBranchPrediction(f, b, local[b1], local[b0], prediction)
+					}
+
+					if !usedPgo {
+						// Lacking loop structure and profile information, fall back on heuristics.
+						if certain[b1] > certain[b0] {
+							prediction = BranchLikely
+							if f.pass.debug > 0 {
+								describeBranchPrediction(f, b, certain[b0], certain[b1], prediction)
+							}
+						} else if certain[b0] > certain[b1] {
+							prediction = BranchUnlikely
+							if f.pass.debug > 0 {
+								describeBranchPrediction(f, b, certain[b1], certain[b0], prediction)
+							}
+						} else if local[b1] > local[b0] {
+							prediction = BranchLikely
+							if f.pass.debug > 0 {
+								describeBranchPrediction(f, b, local[b0], local[b1], prediction)
+							}
+						} else if local[b0] > local[b1] {
+							prediction = BranchUnlikely
+							if f.pass.debug > 0 {
+								describeBranchPrediction(f, b, local[b1], local[b0], prediction)
+							}
 						}
 					}
 				}
@@ -220,11 +274,14 @@ func likelyadjust(f *Func) {
 				}
 			}
 			// Look for calls in the block.  If there is one, make this block unlikely.
-			for _, v := range b.Values {
-				if opcodeTable[v.Op].call {
-					local[b.ID] = blCALL
-					certain[b.ID] = max8(blCALL, certain[b.Succs[0].b.ID])
-					break
+			if !usedPgo {
+				// If we used pgo - we should not use this heuristic
+				for _, v := range b.Values {
+					if opcodeTable[v.Op].call {
+						local[b.ID] = blCALL
+						certain[b.ID] = max8(blCALL, certain[b.Succs[0].b.ID])
+						break
+					}
 				}
 			}
 		}

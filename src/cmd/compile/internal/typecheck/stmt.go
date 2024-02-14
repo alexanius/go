@@ -344,6 +344,7 @@ func normalizeGoDeferCall(pos src.XPos, op ir.Op, call ir.Node, init *ir.Nodes) 
 		callPos := base.Pos
 
 		as := ir.NewAssignListStmt(callPos, ir.OAS2, make([]ir.Node, len(argps)), make([]ir.Node, len(argps)))
+		as.SetCounter(call.Counter())
 		for i, argp := range argps {
 			arg := *argp
 
@@ -354,7 +355,7 @@ func normalizeGoDeferCall(pos src.XPos, op ir.Op, call ir.Node, init *ir.Nodes) 
 
 			// tmp := arg
 			tmp := TempAt(pos, ir.CurFunc, arg.Type())
-			init.Append(Stmt(ir.NewDecl(pos, ir.ODCL, tmp)))
+			init.Append(Stmt(ir.NewDecl(pos, ir.ODCL, tmp, call.Counter())))
 			tmp.Defn = as
 			as.Lhs[i] = tmp
 			as.Rhs[i] = arg
@@ -457,6 +458,7 @@ func tcSelect(sel *ir.SelectStmt) {
 			ncase.Comm = n
 			oselrecv2 := func(dst, recv ir.Node, def bool) {
 				selrecv := ir.NewAssignListStmt(n.Pos(), ir.OSELRECV2, []ir.Node{dst, ir.BlankNode}, []ir.Node{recv})
+				selrecv.SetCounter(n.Counter())
 				selrecv.Def = def
 				selrecv.SetTypecheck(1)
 				selrecv.SetInit(n.Init())

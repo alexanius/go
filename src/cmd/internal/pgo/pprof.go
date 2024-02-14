@@ -60,6 +60,7 @@ func FromPProf(r io.Reader) (*Profile, error) {
 	}
 
 	return &Profile{
+		PProf:        p,
 		TotalWeight:  totalWeight,
 		NamedEdgeMap: namedEdgeMap,
 	}, nil

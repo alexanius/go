@@ -223,6 +223,9 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 			log.Fatalf("%s: PGO error: %v", base.Flag.PgoProfile, err)
 		}
 	}
+	for _, fn := range typecheck.Target.Funcs {
+		ir.CheckIR(fn)
+	}
 
 	// Interleaved devirtualization and inlining.
 	base.Timer.Start("fe", "devirtualize-and-inline")

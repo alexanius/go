@@ -5,6 +5,7 @@
 package ssa
 
 import (
+	"cmd/compile/internal/base"
 	"cmd/internal/src"
 	"fmt"
 )
@@ -14,6 +15,9 @@ type Block struct {
 	// A unique identifier for the block. The system will attempt to allocate
 	// these IDs densely, but no guarantees.
 	ID ID
+
+	// The profile counter for the block
+	Counter int64
 
 	// Source position for block's control operation
 	Pos src.XPos
@@ -116,7 +120,11 @@ type BlockKind int16
 
 // short form print
 func (b *Block) String() string {
-	return fmt.Sprintf("b%d", b.ID)
+	if base.Flag.BbPgoProfile {
+		return fmt.Sprintf("b%d (%d)", b.ID, b.Counter)
+	} else {
+		return fmt.Sprintf("b%d", b.ID)
+	}
 }
 
 // long form print
