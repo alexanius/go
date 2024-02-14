@@ -2904,6 +2904,11 @@ func setPGOProfilePath(pkgs []*Package) {
 			return
 		}
 
+		if cfg.BuildPGOBB {
+			appendBuildSetting(p.Internal.BuildInfo, "-pgobb", "true")
+			appendBuildSetting(p.Internal.BuildInfo, "-pgobbprofile", "true")
+		}
+
 		if cfg.BuildTrimpath {
 			appendBuildSetting(p.Internal.BuildInfo, "-pgo", filepath.Base(file))
 		} else {
@@ -2917,6 +2922,9 @@ func setPGOProfilePath(pkgs []*Package) {
 
 	switch cfg.BuildPGO {
 	case "off":
+		if cfg.BuildPGOBB {
+			base.Fatalf("The \"-pgobb\" option can be enabled only if \"-pgo\" is not \"off\"")
+		}
 		return
 
 	case "auto":
