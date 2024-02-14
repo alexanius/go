@@ -50,6 +50,7 @@ go/flag:build-C
 go/flag:build-a
 go/flag:build-asan
 go/flag:build-asmflags
+go/flag:build-bbpgo
 go/flag:build-buildmode
 go/flag:build-buildvcs
 go/flag:build-compiler
@@ -87,6 +88,7 @@ go/flag:clean-C
 go/flag:clean-a
 go/flag:clean-asan
 go/flag:clean-asmflags
+go/flag:clean-bbpgo
 go/flag:clean-buildmode
 go/flag:clean-buildvcs
 go/flag:clean-cache
@@ -136,6 +138,7 @@ go/flag:fix-C
 go/flag:fix-a
 go/flag:fix-asan
 go/flag:fix-asmflags
+go/flag:fix-bbpgo
 go/flag:fix-buildmode
 go/flag:fix-buildvcs
 go/flag:fix-compiler
@@ -179,6 +182,7 @@ go/flag:generate-C
 go/flag:generate-a
 go/flag:generate-asan
 go/flag:generate-asmflags
+go/flag:generate-bbpgo
 go/flag:generate-buildmode
 go/flag:generate-buildvcs
 go/flag:generate-compiler
@@ -214,6 +218,7 @@ go/flag:get-C
 go/flag:get-a
 go/flag:get-asan
 go/flag:get-asmflags
+go/flag:get-bbpgo
 go/flag:get-buildmode
 go/flag:get-buildvcs
 go/flag:get-compiler
@@ -253,6 +258,7 @@ go/flag:install-C
 go/flag:install-a
 go/flag:install-asan
 go/flag:install-asmflags
+go/flag:install-bbpgo
 go/flag:install-buildmode
 go/flag:install-buildvcs
 go/flag:install-compiler
@@ -289,6 +295,7 @@ go/flag:list-C
 go/flag:list-a
 go/flag:list-asan
 go/flag:list-asmflags
+go/flag:list-bbpgo
 go/flag:list-buildmode
 go/flag:list-buildvcs
 go/flag:list-compiled
@@ -472,6 +479,7 @@ go/flag:run-C
 go/flag:run-a
 go/flag:run-asan
 go/flag:run-asmflags
+go/flag:run-bbpgo
 go/flag:run-buildmode
 go/flag:run-buildvcs
 go/flag:run-compiler
@@ -509,6 +517,7 @@ go/flag:test-C
 go/flag:test-a
 go/flag:test-asan
 go/flag:test-asmflags
+go/flag:test-bbpgo
 go/flag:test-bench
 go/flag:test-benchmem
 go/flag:test-benchtime
@@ -614,6 +623,7 @@ go/flag:vet-C
 go/flag:vet-a
 go/flag:vet-asan
 go/flag:vet-asmflags
+go/flag:vet-bbpgo
 go/flag:vet-buildmode
 go/flag:vet-buildvcs
 go/flag:vet-compiler

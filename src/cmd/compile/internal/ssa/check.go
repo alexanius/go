@@ -84,6 +84,10 @@ func checkFunc(f *Func) {
 			if !b.Controls[0].Type.IsBoolean() {
 				f.Fatalf("if block %s has non-bool control value %s", b, b.Controls[0].LongString())
 			}
+			if b.Succs[0].b.Counter+b.Succs[1].b.Counter-1 > b.Counter {
+
+				f.Fatalf("in if block %s the sum of its successors counters is greater than self counter: %d + %d > %d", b, b.Succs[0].b.Counter, b.Succs[1].b.Counter, b.Counter)
+			}
 		case BlockDefer:
 			if len(b.Succs) != 2 {
 				f.Fatalf("defer block %s len(Succs)==%d, want 2", b, len(b.Succs))

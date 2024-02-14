@@ -234,6 +234,20 @@ func processProto(r io.Reader) (*Profile, error) {
 	// Create package-level call graph with weights from profile and IR.
 	wg := createIRGraph(namedEdgeMap)
 
+	if base.Flag.BbPgoProfile {
+		// If option is enabled - load basic block counters from the profile
+
+		// Load counters from file
+		loadCounters(p)
+
+		// Propagate counters in AST
+		ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
+			for _, f := range list {
+				PropagateCounters(f)
+			}
+		})
+	}
+
 	return &Profile{
 		TotalWeight:  totalWeight,
 		NamedEdgeMap: namedEdgeMap,
