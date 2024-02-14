@@ -50,6 +50,7 @@ cmd/go/flag:build-C
 cmd/go/flag:build-a
 cmd/go/flag:build-asan
 cmd/go/flag:build-asmflags
+cmd/go/flag:build-bbpgo
 cmd/go/flag:build-buildmode
 cmd/go/flag:build-buildvcs
 cmd/go/flag:build-compiler
@@ -87,6 +88,7 @@ cmd/go/flag:clean-C
 cmd/go/flag:clean-a
 cmd/go/flag:clean-asan
 cmd/go/flag:clean-asmflags
+cmd/go/flag:clean-bbpgo
 cmd/go/flag:clean-buildmode
 cmd/go/flag:clean-buildvcs
 cmd/go/flag:clean-cache
@@ -136,6 +138,7 @@ cmd/go/flag:fix-C
 cmd/go/flag:fix-a
 cmd/go/flag:fix-asan
 cmd/go/flag:fix-asmflags
+cmd/go/flag:fix-bbpgo
 cmd/go/flag:fix-buildmode
 cmd/go/flag:fix-buildvcs
 cmd/go/flag:fix-compiler
@@ -179,6 +182,7 @@ cmd/go/flag:generate-C
 cmd/go/flag:generate-a
 cmd/go/flag:generate-asan
 cmd/go/flag:generate-asmflags
+cmd/go/flag:generate-bbpgo
 cmd/go/flag:generate-buildmode
 cmd/go/flag:generate-buildvcs
 cmd/go/flag:generate-compiler
@@ -214,6 +218,7 @@ cmd/go/flag:get-C
 cmd/go/flag:get-a
 cmd/go/flag:get-asan
 cmd/go/flag:get-asmflags
+cmd/go/flag:get-bbpgo
 cmd/go/flag:get-buildmode
 cmd/go/flag:get-buildvcs
 cmd/go/flag:get-compiler
@@ -253,6 +258,7 @@ cmd/go/flag:install-C
 cmd/go/flag:install-a
 cmd/go/flag:install-asan
 cmd/go/flag:install-asmflags
+cmd/go/flag:install-bbpgo
 cmd/go/flag:install-buildmode
 cmd/go/flag:install-buildvcs
 cmd/go/flag:install-compiler
@@ -289,6 +295,7 @@ cmd/go/flag:list-C
 cmd/go/flag:list-a
 cmd/go/flag:list-asan
 cmd/go/flag:list-asmflags
+cmd/go/flag:list-bbpgo
 cmd/go/flag:list-buildmode
 cmd/go/flag:list-buildvcs
 cmd/go/flag:list-compiled
@@ -472,6 +479,7 @@ cmd/go/flag:run-C
 cmd/go/flag:run-a
 cmd/go/flag:run-asan
 cmd/go/flag:run-asmflags
+cmd/go/flag:run-bbpgo
 cmd/go/flag:run-buildmode
 cmd/go/flag:run-buildvcs
 cmd/go/flag:run-compiler
@@ -509,6 +517,7 @@ cmd/go/flag:test-C
 cmd/go/flag:test-a
 cmd/go/flag:test-asan
 cmd/go/flag:test-asmflags
+cmd/go/flag:test-bbpgo
 cmd/go/flag:test-bench
 cmd/go/flag:test-benchmem
 cmd/go/flag:test-benchtime
@@ -614,6 +623,7 @@ cmd/go/flag:vet-C
 cmd/go/flag:vet-a
 cmd/go/flag:vet-asan
 cmd/go/flag:vet-asmflags
+cmd/go/flag:vet-bbpgo
 cmd/go/flag:vet-buildmode
 cmd/go/flag:vet-buildvcs
 cmd/go/flag:vet-compiler

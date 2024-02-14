@@ -227,8 +227,7 @@ func hashFunc(t *types.Type) *ir.Func {
 		}
 	}
 
-	r := ir.NewReturnStmt(base.Pos, nil)
-	r.Results.Append(nh)
+	r := ir.NewReturnStmt(base.Pos, []ir.Node{nh})
 	fn.Body.Append(r)
 
 	if base.Flag.LowerR != 0 {
