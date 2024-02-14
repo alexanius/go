@@ -104,7 +104,7 @@ func MakeTask() {
 			})
 
 			if len(fn.Body) == 0 {
-				fn.Body = []ir.Node{ir.NewBlockStmt(src.NoXPos, nil)}
+				fn.Body = []ir.Node{ir.NewBlockStmt(src.NoXPos, 0, nil)}
 			}
 		}
 

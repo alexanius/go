@@ -61,7 +61,7 @@ func walkStmt(n ir.Node) ir.Node {
 		if n.Op() == ir.ONAME {
 			// copy rewrote to a statement list and a temp for the length.
 			// Throw away the temp to avoid plain values as statements.
-			n = ir.NewBlockStmt(n.Pos(), init)
+			n = ir.NewBlockStmt(n.Pos(), n.Counter(), init)
 			init = nil
 		}
 		if len(init) > 0 {
@@ -71,7 +71,7 @@ func walkStmt(n ir.Node) ir.Node {
 
 			default:
 				init.Append(n)
-				n = ir.NewBlockStmt(n.Pos(), init)
+				n = ir.NewBlockStmt(n.Pos(), n.Counter(), init)
 			}
 		}
 		return n
@@ -143,7 +143,7 @@ func walkStmt(n ir.Node) ir.Node {
 
 		if len(init) > 0 {
 			init.Append(n)
-			return ir.NewBlockStmt(n.Pos(), init)
+			return ir.NewBlockStmt(n.Pos(), n.Counter(), init)
 		}
 		return n
 
@@ -215,7 +215,7 @@ func walkGoDefer(n *ir.GoDeferStmt) ir.Node {
 
 	if len(init) > 0 {
 		init.Append(n)
-		return ir.NewBlockStmt(n.Pos(), init)
+		return ir.NewBlockStmt(n.Pos(), n.Counter(), init)
 	}
 	return n
 }

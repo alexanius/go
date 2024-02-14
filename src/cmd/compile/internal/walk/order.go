@@ -108,6 +108,7 @@ func (o *orderState) copyExpr1(n ir.Node, clear bool) *ir.Name {
 	t := n.Type()
 	v := o.newTemp(t, clear)
 	o.append(ir.NewAssignStmt(base.Pos, v, n))
+	v.SetCounter(n.Counter())
 	return v
 }
 
@@ -503,7 +504,12 @@ func orderStmtInPlace(n ir.Node, free map[string][]*ir.Name) ir.Node {
 	mark := order.markTemp()
 	order.stmt(n)
 	order.popTemp(mark)
-	return ir.NewBlockStmt(src.NoXPos, order.out)
+	var c int64
+	if n != nil {
+		c = n.Counter()
+	}
+	res := ir.NewBlockStmt(src.NoXPos, c, order.out)
+	return res
 }
 
 // init moves n's init list to o.out.
@@ -1000,7 +1006,7 @@ func (o *orderState) stmt(n ir.Node) {
 								init = init[1:]
 							}
 						}
-						dcl := typecheck.Stmt(ir.NewDecl(base.Pos, ir.ODCL, n.(*ir.Name)))
+						dcl := typecheck.Stmt(ir.NewDecl(base.Pos, ir.ODCL, n.(*ir.Name), r.Counter()))
 						ncas.PtrInit().Append(dcl)
 					}
 					tmp := o.newTemp(t, t.HasPointers())
@@ -1513,6 +1519,7 @@ func (o *orderState) expr1(n, lhs ir.Node) ir.Node {
 func (o *orderState) as2func(n *ir.AssignListStmt) {
 	results := n.Rhs[0].Type()
 	as := ir.NewAssignListStmt(n.Pos(), ir.OAS2, nil, nil)
+	as.SetCounter(n.Counter())
 	for i, nl := range n.Lhs {
 		if !ir.IsBlank(nl) {
 			typ := results.Field(i).Type
@@ -1531,6 +1538,7 @@ func (o *orderState) as2func(n *ir.AssignListStmt) {
 // Just like as2func, this also adds temporaries to ensure left-to-right assignment.
 func (o *orderState) as2ok(n *ir.AssignListStmt) {
 	as := ir.NewAssignListStmt(n.Pos(), ir.OAS2, nil, nil)
+	as.SetCounter(n.Counter())
 
 	do := func(i int, typ *types.Type) {
 		if nl := n.Lhs[i]; !ir.IsBlank(nl) {
