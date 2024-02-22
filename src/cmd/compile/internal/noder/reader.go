@@ -1633,7 +1633,7 @@ func (r *reader) stmt1(tag codeStmt, out *ir.Nodes) ir.Node {
 		if len(rhs) == 0 {
 			for _, name := range names {
 				as := ir.NewAssignStmt(pos, name, nil)
-				as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, name))
+				as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, name, as.Counter()))
 				out.Append(typecheck.Stmt(as))
 			}
 			return nil
@@ -1646,6 +1646,7 @@ func (r *reader) stmt1(tag codeStmt, out *ir.Nodes) ir.Node {
 		}
 
 		n := ir.NewAssignListStmt(pos, ir.OAS2, lhs, rhs)
+		// TODO which counter?
 		n.Def = r.initDefn(n, names)
 		return n
 
@@ -1887,7 +1888,7 @@ func (r *reader) selectStmt(label *types.Sym) ir.Node {
 				// Replace comm with `tmp := <-c`.
 				tmpAs := ir.NewAssignStmt(pos, tmp, recv)
 				tmpAs.Def = true
-				tmpAs.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp))
+				tmpAs.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp, tmpAs.Counter()))
 				comm = tmpAs
 
 				// Change original assignment to `i = tmp`, and prepend to body.
@@ -2037,7 +2038,7 @@ func (r *reader) initDefn(defn ir.InitNode, names []*ir.Name) bool {
 	init := make([]ir.Node, len(names))
 	for i, name := range names {
 		name.Defn = defn
-		init[i] = ir.NewDecl(name.Pos(), ir.ODCL, name)
+		init[i] = ir.NewDecl(name.Pos(), ir.ODCL, name, name.Counter())
 	}
 	defn.SetInit(init)
 	return true
@@ -2882,10 +2883,11 @@ func (r *reader) multiExpr() []ir.Node {
 
 		results := make([]ir.Node, r.Len())
 		as := ir.NewAssignListStmt(pos, ir.OAS2, nil, []ir.Node{expr})
+		// TODO which counter?
 		as.Def = true
 		for i := range results {
 			tmp := r.temp(pos, r.typ())
-			as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp))
+			as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp, 0)) // TODO fix counter
 			as.Lhs.Append(tmp)
 
 			res := ir.Node(tmp)
@@ -2924,7 +2926,7 @@ func (r *reader) temp(pos src.XPos, typ *types.Type) *ir.Name {
 func (r *reader) tempCopy(pos src.XPos, expr ir.Node, init *ir.Nodes) *ir.Name {
 	tmp := r.temp(pos, expr.Type())
 
-	init.Append(typecheck.Stmt(ir.NewDecl(pos, ir.ODCL, tmp)))
+	init.Append(typecheck.Stmt(ir.NewDecl(pos, ir.ODCL, tmp, expr.Counter())))
 
 	assign := ir.NewAssignStmt(pos, tmp, expr)
 	assign.Def = true
@@ -3260,6 +3262,7 @@ func (r *reader) pkgInitOrder(target *ir.Package) {
 			as = typecheck.Stmt(ir.NewAssignStmt(pos, lhs[0], rhs))
 		} else {
 			as = typecheck.Stmt(ir.NewAssignListStmt(pos, ir.OAS2, lhs, []ir.Node{rhs}))
+			// TODO which counter?
 		}
 
 		for _, v := range lhs {
@@ -3455,6 +3458,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 
 	// Create assignment to declare and initialize inlvars.
 	as2 := ir.NewAssignListStmt(call.Pos(), ir.OAS2, ir.ToNodes(inlvars), args)
+	// TODO which counter?
 	as2.Def = true
 	var as2init ir.Nodes
 	for _, name := range inlvars {
@@ -3462,7 +3466,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			continue
 		}
 		// TODO(mdempsky): Use inlined position of name.Pos() instead?
-		as2init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name))
+		as2init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, 0)) // TODO fix counter
 		name.Defn = as2
 	}
 	as2.SetInit(as2init)
@@ -3473,7 +3477,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 		// result variables now.
 		for _, name := range retvars {
 			// TODO(mdempsky): Use inlined position of name.Pos() instead?
-			init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name))
+			init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, 0)) // TODO fix counter
 			ras := ir.NewAssignStmt(call.Pos(), name, nil)
 			init.Append(typecheck.Stmt(ras))
 		}
@@ -3553,11 +3557,12 @@ func (r *reader) inlReturn(ret *ir.ReturnStmt, retvars []*ir.Name) *ir.BlockStmt
 		assert(len(retvars) == len(results))
 
 		as2 := ir.NewAssignListStmt(pos, ir.OAS2, ir.ToNodes(retvars), ret.Results)
+		as2.SetCounter(ret.Counter())
 
 		if r.delayResults {
 			for _, name := range retvars {
 				// TODO(mdempsky): Use inlined position of name.Pos() instead?
-				block.Append(ir.NewDecl(pos, ir.ODCL, name))
+				block.Append(ir.NewDecl(pos, ir.ODCL, name, ret.Counter()))
 				name.Defn = as2
 			}
 		}

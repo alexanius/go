@@ -918,7 +918,9 @@ func FDumpList(w io.Writer, s string, list Nodes) {
 // indent prints indentation to w.
 func indent(w io.Writer, depth int, counter int64) {
 	fmt.Fprint(w, "\n")
-	fmt.Fprintf(w, "%d ", counter)
+	if base.Flag.BbPgoProfile {
+		fmt.Fprintf(w, "%d ", counter)
+	}
 	for i := 0; i < depth; i++ {
 		fmt.Fprint(w, ".   ")
 	}
@@ -1174,7 +1176,11 @@ func dumpNode(w io.Writer, n Node, depth int) {
 				continue
 			}
 			if name != "" {
-				indent(w, depth, n.Counter())
+				c := n.Counter()
+				if len(val) > 0 {
+					c = val[0].Counter()
+				}
+				indent(w, depth, c)
 				fmt.Fprintf(w, "%+v-%s", n.Op(), name)
 			}
 			dumpNodes(w, val, depth+1)

@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"cmd/compile/internal/abi"
@@ -563,7 +562,8 @@ func buildssa(fn *ir.Func, worker int) *ssa.Func {
 	// fallthrough to exit
 	if s.curBlock != nil {
 		s.pushLine(fn.Endlineno)
-		s.exit()
+		b := s.exit()
+		b.Counter = 0
 		s.popLine()
 	}
 
@@ -890,6 +890,8 @@ type state struct {
 	line []src.XPos
 	// the last line number processed; it may have been popped
 	lastPos src.XPos
+	// the last counter processed. Should be used only in cases when we can not set counter directly
+	lastCounter int64
 
 	// list of panic calls by function name and line number.
 	// Used to deduplicate panic calls.
@@ -1821,6 +1823,8 @@ func (s *state) stmt(n ir.Node) {
 
 		// ensure empty for loops have correct position; issue #30167
 		bBody.Pos = n.Pos()
+//		bBody.Counter = n.Counter()
+//		bIncr.Counter = n.Counter()
 
 		// first, jump to condition test
 		b := s.endBlock()
@@ -1831,6 +1835,7 @@ func (s *state) stmt(n ir.Node) {
 		if n.Cond != nil {
 			counter = n.Cond.Counter()
 		}
+		b.Counter = counter
 		s.startBlock(bCond, counter)
 		if n.Cond != nil {
 			s.condBranch(n.Cond, bBody, bEnd, 1)
@@ -1854,9 +1859,9 @@ func (s *state) stmt(n ir.Node) {
 		}
 
 		// generate body
-		if n.Body != nil && len(n.Body) > 0 {
-			counter = n.Body[0].Counter()
-		}
+//		if n.Body != nil && len(n.Body) > 0 {
+//			counter = n.Body[0].Counter()
+//		}
 		s.startBlock(bBody, counter)
 		s.stmtList(n.Body)
 
@@ -1890,7 +1895,9 @@ func (s *state) stmt(n ir.Node) {
 			}
 		}
 
-		s.startBlock(bEnd, n.Counter())
+		s.startBlock(bEnd, counter)
+		bBody.Counter = bIncr.Counter
+		bEnd.Counter = n.Counter()
 
 	case ir.OSWITCH, ir.OSELECT:
 		// These have been mostly rewritten by the front end into their Nbody fields.
@@ -3283,6 +3290,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			a := s.expr(n.X)
 			i := s.expr(n.Index)
 			len := s.newValue1(ssa.OpStringLen, types.Types[types.TINT], a)
+			s.lastCounter = n.Counter()
 			i = s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded())
 			ptrtyp := s.f.Config.Types.BytePtr
 			ptr := s.newValue1(ssa.OpStringPtr, ptrtyp, a)
@@ -3305,12 +3313,14 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 					// Bounds check will never succeed.  Might as well
 					// use constants for the bounds check.
 					z := s.constInt(types.Types[types.TINT], 0)
+					s.lastCounter = n.Counter()
 					s.boundsCheck(z, z, ssa.BoundsIndex, false)
 					// The return value won't be live, return junk.
 					// But not quite junk, in case bounds checks are turned off. See issue 48092.
 					return s.zeroVal(n.Type())
 				}
 				len := s.constInt(types.Types[types.TINT], bound)
+				s.lastCounter = n.Counter()
 				s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded()) // checks i == 0
 				return s.newValue1I(ssa.OpArraySelect, n.Type(), 0, a)
 			}
@@ -3393,6 +3403,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		if n.Max != nil {
 			k = s.expr(n.Max)
 		}
+		s.lastCounter = n.Counter()
 		p, l, c := s.slice(v, i, j, k, n.Bounded())
 		if check {
 			// Emit checkptr instrumentation after bound check to prevent false positive, see #46938.
@@ -3423,6 +3434,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		nelem := n.Type().Elem().NumElem()
 		arrlen := s.constInt(types.Types[types.TINT], nelem)
 		cap := s.newValue1(ssa.OpSliceLen, types.Types[types.TINT], v)
+		s.lastCounter = n.Counter()
 		s.boundsCheck(arrlen, cap, ssa.BoundsConvert, false)
 		op := ssa.OpSlicePtr
 		if nelem == 0 {
@@ -3939,6 +3951,7 @@ func (s *state) assignWhichMayOverlap(left ir.Node, right *ssa.Value, deref bool
 				// The bounds check must fail.  Might as well
 				// ignore the actual index and just use zeros.
 				z := s.constInt(types.Types[types.TINT], 0)
+				s.lastCounter = left.Counter()
 				s.boundsCheck(z, z, ssa.BoundsIndex, false)
 				return
 			}
@@ -3947,6 +3960,7 @@ func (s *state) assignWhichMayOverlap(left ir.Node, right *ssa.Value, deref bool
 			}
 			// Rewrite to a = [1]{v}
 			len := s.constInt(types.Types[types.TINT], 1)
+			s.lastCounter = left.Counter()
 			s.boundsCheck(i, len, ssa.BoundsIndex, false) // checks i == 0
 			v := s.newValue1(ssa.OpArrayMake1, t, right)
 			s.assign(left.X, v, false, 0)
@@ -5523,7 +5537,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 		r := s.f.NewBlock(ssa.BlockPlain)
 		s.startBlock(r, n.Counter())
 		bb := s.exit()
-		bb.Counter = n.Counter()
+		bb.Counter = 0 // We assume, that panic is always zero
 		b.AddEdgeTo(r)
 		b.Likely = ssa.BranchLikely
 		s.startBlock(bNext, n.Counter())
@@ -5637,6 +5651,7 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 			a := s.expr(n.X)
 			i := s.expr(n.Index)
 			len := s.newValue1(ssa.OpSliceLen, types.Types[types.TINT], a)
+			s.lastCounter = n.Counter()
 			i = s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded())
 			p := s.newValue1(ssa.OpSlicePtr, t, a)
 			return s.newValue2(ssa.OpPtrIndex, t, p, i)
@@ -5644,6 +5659,7 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 			a := s.addr(n.X)
 			i := s.expr(n.Index)
 			len := s.constInt(types.Types[types.TINT], n.X.Type().NumElem())
+			s.lastCounter = n.Counter()
 			i = s.boundsCheck(i, len, ssa.BoundsIndex, n.Bounded())
 			return s.newValue2(ssa.OpPtrIndex, types.NewPtr(n.X.Type().Elem()), a, i)
 		}
@@ -5799,6 +5815,7 @@ func (s *state) boundsCheck(idx, len *ssa.Value, kind ssa.BoundsKind, bounded bo
 	}
 
 	bNext := s.f.NewBlock(ssa.BlockPlain)
+	bNext.Counter = s.lastCounter
 	bPanic := s.f.NewBlock(ssa.BlockExit)
 
 	if !idx.Type.IsSigned() {
@@ -5844,7 +5861,7 @@ func (s *state) boundsCheck(idx, len *ssa.Value, kind ssa.BoundsKind, bounded bo
 		mem := s.newValue3I(ssa.OpPanicBounds, types.TypeMem, int64(kind), idx, len, s.mem())
 		s.endBlock().SetControl(mem)
 	}
-	s.startBlock(bNext, 0)
+	s.startBlock(bNext, s.lastCounter)
 
 	// In Spectre index mode, apply an appropriate mask to avoid speculative out-of-bounds accesses.
 	if base.Flag.Cfg.SpectreIndex {
@@ -7622,7 +7639,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			if v, ok := progToValue[p]; ok {
 				s = v.String()
 			} else if b, ok := progToBlock[p]; ok {
-				s = b.String() + " (" + strconv.FormatInt(b.Counter, 10) + ")"
+				s = b.String()
 			} else {
 				s = "   " // most value and branch strings are 2-3 characters long
 			}
@@ -7648,7 +7665,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			if v, ok := progToValue[p]; ok {
 				buf.WriteString(v.HTML())
 			} else if b, ok := progToBlock[p]; ok {
-				buf.WriteString("<b>" + b.HTML()  + " (" + strconv.FormatInt(b.Counter, 10) + ")"+ "</b>")
+				buf.WriteString("<b>" + b.HTML() + "</b>")
 			}
 			buf.WriteString("</dt>")
 			buf.WriteString("<dd class=\"ssa-prog\">")

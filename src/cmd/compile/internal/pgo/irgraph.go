@@ -186,7 +186,7 @@ func New(profileFile string) (*Profile, error) {
 	return profile, nil
 
 }
-
+var PRINT bool
 // processProto generates a profile-graph from the profile.
 func processProto(r io.Reader) (*Profile, error) {
 	p, err := profile.Parse(r)
@@ -239,10 +239,11 @@ func processProto(r io.Reader) (*Profile, error) {
 
 		// Load counters from file
 		loadCounters(p)
-
 		// Propagate counters in AST
 		ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
 			for _, f := range list {
+_, PRINT = os.LookupEnv("AAA")
+PRINT = PRINT && strings.Contains(ir.LinkFuncName(f), "testFor1")
 				propagateCounters(f)
 			}
 		})
@@ -257,38 +258,56 @@ func processProto(r io.Reader) (*Profile, error) {
 
 // backPropNodeListCounterRec for all nodes in the list launch back propagation
 // returns the maximum value of the counter
-func backPropNodeListCounterRec(nodes ir.Nodes, depth int) int64 {
+func backPropNodeListCounterRec(nodes ir.Nodes, depth int) (int64, bool) {
 	if nodes == nil {
-		return 0
+		return 0, false
 	}
 
 	var count int64
+	var mR bool
 
 	// Step 1: propagate counters and find maximum for this tree level
 	// TODO we should take in account that a subtree in a list may contain
 	//      return, and after it the counter may be lower
-	for _, n := range nodes {
-		c := backPropNodeCounterRec(n, depth)
+	rangeStart := 0
+	for curNode, n := range nodes {
+		c, mayReturn := backPropNodeCounterRec(n, depth)
 		if c > count {
 		    count = c
+		}
+
+		if mayReturn {
+			// If we could return from this sub-tree, we must set
+			// the current counter for this range of nodes.
+			for i := rangeStart; i <= curNode; i++ {
+				if nodes[i].Op() != ir.ONAME {
+					nodes[i].SetCounter(count)
+				}
+			}
+			rangeStart = curNode + 1
+			mR = true
+			count = 0
 		}
 	}
 
 	// Step 2: for this level set all counters to the maximum value
-	for _, n := range nodes {
-		n.SetCounter(count)
+	for i := rangeStart; i < len(nodes); i++ {
+		if nodes[i].Op() != ir.ONAME {
+			nodes[i].SetCounter(count)
+		}
 	}
 
-	return count
+	return count, mR
 }
 
 // backPropNodeCounterRec implements the propagation of profile counters from
 // bottomn to top. The main goal of this step is to get the maximal counter
 // value to each level of a tree and to make possible the top to down pass
+// returns the counter of the node and true if sub-tree have a return statement
 // NOTE keep it symmetrically to forwardPropNodeCounterRec
-func backPropNodeCounterRec(n ir.Node, depth int) int64 {
+func backPropNodeCounterRec(n ir.Node, depth int) (int64, bool) {
 	if n == nil {
-		return 0
+		return 0, false
 	}
 
 	max := func(x, y, z int64) int64 {
@@ -301,63 +320,85 @@ func backPropNodeCounterRec(n ir.Node, depth int) int64 {
 		}
 		return res
 	}
-
+	var mayReturn bool
 	var count int64
 	switch n.Op() {
 		case ir.OBLOCK:
 			n := n.(*ir.BlockStmt)
-			count      = backPropNodeListCounterRec(n.List, depth + 1)
+			count, mayReturn = backPropNodeListCounterRec(n.List, depth + 1)
 		case ir.OIF:
 			n := n.(*ir.IfStmt)
-			count      = backPropNodeCounterRec(n.Cond, depth + 1)
-			bodyCount := backPropNodeListCounterRec(n.Body, depth + 1)
-			elseCount := backPropNodeListCounterRec(n.Else, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.Cond, depth + 1)
+if PRINT {
+	println("Start IF body")
+}
+			bC, bR           := backPropNodeListCounterRec(n.Body, depth + 1)
+if PRINT {
+	println("IF body counter: ", bC)
+}
+if PRINT {
+	println("Start IF body")
+}
+			eC, eR           := backPropNodeListCounterRec(n.Else, depth + 1)
+if PRINT {
+	println("IF else counter: ", eC)
+}
 
-			sum   := bodyCount + elseCount
+			sum   := bC + eC
 			count  = max(count, sum, 0)
+			mayReturn = mayReturn || bR || eR
 		case ir.OAS:
 			n := n.(*ir.AssignStmt)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
-			yC    := backPropNodeCounterRec(n.Y, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			yC, yR           := backPropNodeCounterRec(n.Y, depth + 1)
 			count  = max(count, yC, 0)
+			mayReturn = mayReturn || yR
 		case ir.OAS2, ir.OAS2DOTTYPE, ir.OAS2FUNC, ir.OAS2MAPR,
 			ir.OAS2RECV, ir.OSELRECV2:
 			n := n.(*ir.AssignListStmt)
-			count  = backPropNodeListCounterRec(n.Lhs, depth + 1)
-			rC    := backPropNodeListCounterRec(n.Rhs, depth + 1)
+			count, mayReturn  = backPropNodeListCounterRec(n.Lhs, depth + 1)
+			rC, rR           := backPropNodeListCounterRec(n.Rhs, depth + 1)
 			count  = max(count, rC, 0)
+			mayReturn = mayReturn || rR
 		case ir.OASOP:
 			n := n.(*ir.AssignOpStmt)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
-			yC    := backPropNodeCounterRec(n.Y, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			yC, yR           := backPropNodeCounterRec(n.Y, depth + 1)
 			count  = max(count, yC, 0)
+			mayReturn = mayReturn || yR
 		case ir.OFOR:
 			n := n.(*ir.ForStmt)
-			bC := backPropNodeListCounterRec(n.Body, depth + 1)
-			cC := backPropNodeCounterRec(n.Cond, depth + 1)
-			pC := backPropNodeCounterRec(n.Post, depth + 1)
-			if bC != 0 || cC != 0 || pC != 0 {
+			count, mayReturn  = backPropNodeListCounterRec(n.Body, depth + 1)
+			cC, cR           := backPropNodeCounterRec(n.Cond, depth + 1)
+			pC, pR           := backPropNodeCounterRec(n.Post, depth + 1)
+
+			// The OFOR node itself represents the acyclic node without real representation in code.
+			// Its counter should be the same as the acyclic nodes of the same level
+			if count != 0 || cC != 0 || pC != 0 {
 				count = 1
 			} else {
 				count = 0
 			}
+			mayReturn = mayReturn || cR || pR
 		case ir.ORETURN:
 			n := n.(*ir.ReturnStmt)
-			count = backPropNodeListCounterRec(n.Results, depth + 1)
+			count, mayReturn = backPropNodeListCounterRec(n.Results, depth + 1)
+			mayReturn = true
 		case ir.OADDR, ir.OPTRLIT:
 			n := n.(*ir.AddrExpr)
-			count = backPropNodeCounterRec(n.X, depth + 1)
+			count, mayReturn = backPropNodeCounterRec(n.X, depth + 1)
 		case ir.ODEREF:
 			n := n.(*ir.StarExpr)
-			count = backPropNodeCounterRec(n.X, depth + 1)
+			count, mayReturn = backPropNodeCounterRec(n.X, depth + 1)
 		case ir.OXDOT, ir.ODOT, ir.ODOTPTR, ir.ODOTMETH, ir.ODOTINTER, ir.OMETHVALUE, ir.OMETHEXPR:
 			n := n.(*ir.SelectorExpr)
-			count = backPropNodeCounterRec(n.X, depth + 1)
+			count, mayReturn = backPropNodeCounterRec(n.X, depth + 1)
 		case ir.OARRAYLIT, ir.OMAPLIT, ir.OSLICELIT, ir.OSTRUCTLIT:
 			n := n.(*ir.CompLitExpr)
-			count  = backPropNodeCounterRec(n.RType, depth + 1)
-			lC    := backPropNodeListCounterRec(n.List, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.RType, depth + 1)
+			lC, lR           := backPropNodeListCounterRec(n.List, depth + 1)
 			count  = max(count, lC, 0)
+			mayReturn = mayReturn || lR
 		case ir.OAPPEND, ir.OCALL, ir.OCALLFUNC, ir.OCALLINTER, ir.OCALLMETH,
 			ir.ODELETE, ir.OGETG, ir.OGETCALLERPC, ir.OGETCALLERSP,
 			ir.OMAKE, ir.OMAX, ir.OMIN, ir.OPRINT, ir.OPRINTLN,
@@ -365,110 +406,147 @@ func backPropNodeCounterRec(n ir.Node, depth int) int64 {
 
 			n := n.(*ir.CallExpr)
 
-			fC := backPropNodeCounterRec(n.Fun, depth + 1)
-			aC := backPropNodeListCounterRec(n.Args, depth + 1)
-			dC := backPropNodeCounterRec(n.DeferAt, depth + 1)
-			rC := backPropNodeCounterRec(n.RType, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.Fun, depth + 1)
+			aC, aR           := backPropNodeListCounterRec(n.Args, depth + 1)
+			dC, dR           := backPropNodeCounterRec(n.DeferAt, depth + 1)
+			rC, rR           := backPropNodeCounterRec(n.RType, depth + 1)
 
-			count = max(fC, aC, dC)
+			count = max(count, aC, dC)
 			count = max(count, rC, 0)
+			mayReturn = mayReturn || aR || dR || rR
 		case ir.OADDSTR:
 			n := n.(*ir.AddStringExpr)
-			count = backPropNodeListCounterRec(n.List, depth + 1)
+			count, mayReturn = backPropNodeListCounterRec(n.List, depth + 1)
 		case ir.OSTRUCTKEY:
 			n := n.(*ir.StructKeyExpr)
-			count = backPropNodeCounterRec(n.Value, depth + 1)
+			count, mayReturn = backPropNodeCounterRec(n.Value, depth + 1)
 		case ir.ODEFER, ir.OGO:
 			n := n.(*ir.GoDeferStmt)
-			count = backPropNodeCounterRec(n.Call, depth + 1)
+			count, mayReturn = backPropNodeCounterRec(n.Call, depth + 1)
 		case ir.OKEY:
 			n := n.(*ir.KeyExpr)
-			count  = backPropNodeCounterRec(n.Key, depth + 1)
-			vC    := backPropNodeCounterRec(n.Value, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.Key, depth + 1)
+			vC, vR           := backPropNodeCounterRec(n.Value, depth + 1)
 			count  = max(count, vC, 0)
+			mayReturn = mayReturn || vR
 		case ir.OADD, ir.OAND, ir.OANDNOT, ir.ODIV, ir.OEQ, ir.OGE, ir.OGT, ir.OLE,
 			ir.OLSH, ir.OLT, ir.OMOD, ir.OMUL, ir.ONE, ir.OOR, ir.ORSH, ir.OSUB, ir.OXOR,
 			ir.OCOPY, ir.OCOMPLEX, ir.OUNSAFEADD, ir.OUNSAFESLICE, ir.OUNSAFESTRING,
 			ir.OMAKEFACE:
-			// Binary expr
+
 			n := n.(*ir.BinaryExpr)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
-			yC    := backPropNodeCounterRec(n.Y, depth + 1)
-			count  = max(count, yC, 0)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			yC, yR           := backPropNodeCounterRec(n.Y, depth + 1)
+
+			count     = max(count, yC, 0)
+			mayReturn = mayReturn || yR
 		case ir.OBITNOT, ir.ONEG, ir.ONOT, ir.OPLUS, ir.ORECV,
 			ir.OCAP, ir.OCLEAR, ir.OCLOSE, ir.OIMAG, ir.OLEN, ir.ONEW, ir.OPANIC, ir.OREAL,
 			ir.OCHECKNIL, ir.OCFUNC, ir.OIDATA, ir.OITAB, ir.OSPTR,
 			ir.OUNSAFESTRINGDATA, ir.OUNSAFESLICEDATA:
-			// Unary expr
+
 			n     := n.(*ir.UnaryExpr)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+
+			if n.Op() == ir.OPANIC {
+				mayReturn = true
+			}
 		case ir.OCONV, ir.OCONVIFACE, ir.OCONVNOP, ir.OBYTES2STR, ir.OBYTES2STRTMP,
 			ir.ORUNES2STR, ir.OSTR2BYTES, ir.OSTR2BYTESTMP, ir.OSTR2RUNES,
 			ir.ORUNESTR, ir.OSLICE2ARR, ir.OSLICE2ARRPTR:
-			// Unary expr
 			n     := n.(*ir.ConvExpr)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
 		case ir.OANDAND, ir.OOROR:
-			// Logical expr
 			n := n.(*ir.LogicalExpr)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
-			yC    := backPropNodeCounterRec(n.Y, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			yC, yR           := backPropNodeCounterRec(n.Y, depth + 1)
 			count  = max(count, yC, 0)
+			mayReturn = mayReturn || yR
 		case ir.OMAKECHAN, ir.OMAKEMAP, ir.OMAKESLICE, ir.OMAKESLICECOPY:
 			n := n.(*ir.MakeExpr)
-			count  = backPropNodeCounterRec(n.Len, depth + 1)
-			capC  := backPropNodeCounterRec(n.Cap, depth + 1)
-			count  = max(count, capC, 0)
+			count, mayReturn  = backPropNodeCounterRec(n.Len, depth + 1)
+			cC, cR           := backPropNodeCounterRec(n.Cap, depth + 1)
+			count  = max(count, cC, 0)
+			mayReturn = mayReturn || cR
 		case ir.OINDEX, ir.OINDEXMAP:
 			n := n.(*ir.IndexExpr)
-			count   = backPropNodeCounterRec(n.X, depth + 1)
-			idxC   := backPropNodeCounterRec(n.Index, depth + 1)
-			rtypeC := backPropNodeCounterRec(n.RType, depth + 1)
-			count   = max(count, idxC, rtypeC)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			iC, iR           := backPropNodeCounterRec(n.Index, depth + 1)
+			rC, rR           := backPropNodeCounterRec(n.RType, depth + 1)
+			count   = max(count, iC, rC)
+			mayReturn = mayReturn || iR || rR
 		case ir.OSLICE, ir.OSLICEARR, ir.OSLICESTR, ir.OSLICE3, ir.OSLICE3ARR:
 			n := n.(*ir.SliceExpr)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
-			lC    := backPropNodeCounterRec(n.Low, depth + 1)
-			hC    := backPropNodeCounterRec(n.High, depth + 1)
-			mC    := backPropNodeCounterRec(n.Max, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			lC, lR           := backPropNodeCounterRec(n.Low, depth + 1)
+			hC, hR           := backPropNodeCounterRec(n.High, depth + 1)
+			mC, mR           := backPropNodeCounterRec(n.Max, depth + 1)
 			count  = max(count, lC, hC)
 			count  = max(count, mC, 0)
+			mayReturn = mayReturn || lR || hR || mR
 		case ir.ORANGE:
 			n := n.(*ir.RangeStmt)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
-			rC    := backPropNodeCounterRec(n.RType, depth + 1)
-			kC    := backPropNodeCounterRec(n.Key, depth + 1)
-			vC    := backPropNodeCounterRec(n.Value, depth + 1)
-			bC    := backPropNodeListCounterRec(n.Body, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			rC, rR           := backPropNodeCounterRec(n.RType, depth + 1)
+			kC, kR           := backPropNodeCounterRec(n.Key, depth + 1)
+			vC, vR           := backPropNodeCounterRec(n.Value, depth + 1)
+			bC, bR           := backPropNodeListCounterRec(n.Body, depth + 1)
 			count  = max(count, rC, kC)
 			count  = max(count, vC, bC)
+			if count > 0 {
+				// Same logic as for OFOR
+				count = 1
+			}
+			mayReturn = mayReturn || rR || kR || vR || bR
 		case ir.OSWITCH:
 			n := n.(*ir.SwitchStmt)
-			count = backPropNodeCounterRec(n.Tag, depth + 1)
-			// TODO Implement cases
+			count, mayReturn = backPropNodeCounterRec(n.Tag, depth + 1)
+
+			for _, cs := range n.Cases {
+				cC, cR := backPropNodeCounterRec(cs, depth + 1)
+				count  = max(count, cC, 0)
+				mayReturn = mayReturn || cR
+			}
+		case ir.OCASE:
+			n := n.(*ir.CaseClause)
+			count, mayReturn  = backPropNodeListCounterRec(n.List, depth + 1)
+			rC, rR           := backPropNodeListCounterRec(n.RTypes, depth + 1)
+			bC, bR           := backPropNodeListCounterRec(n.Body, depth + 1)
+			count  = max(count, rC, bC)
+			mayReturn = mayReturn || rR || bR
 		case ir.OTYPESW:
 			n := n.(*ir.TypeSwitchGuard)
-			count = backPropNodeCounterRec(n.X, depth + 1)
+			count, mayReturn = backPropNodeCounterRec(n.X, depth + 1)
 		case ir.ODOTTYPE, ir.ODOTTYPE2:
 			n := n.(*ir.TypeAssertExpr)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
 		case ir.OSEND:
 			n := n.(*ir.SendStmt)
-			count  = backPropNodeCounterRec(n.Chan, depth + 1)
-			vC    := backPropNodeCounterRec(n.Value, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.Chan, depth + 1)
+			vC, vR           := backPropNodeCounterRec(n.Value, depth + 1)
 			count  = max(count, vC, 0)
+			mayReturn = mayReturn || vR
 		case ir.OSELECT:
 			n := n.(*ir.SelectStmt)
-			count  = backPropNodeListCounterRec(n.Compiled, depth + 1)
+			count, mayReturn  = backPropNodeListCounterRec(n.Compiled, depth + 1)
 		case ir.ODYNAMICDOTTYPE, ir.ODYNAMICDOTTYPE2:
 			n := n.(*ir.DynamicTypeAssertExpr)
-			count  = backPropNodeCounterRec(n.X, depth + 1)
-			sC    := backPropNodeCounterRec(n.SrcRType, depth + 1)
-			rC    := backPropNodeCounterRec(n.RType, depth + 1)
-			iC    := backPropNodeCounterRec(n.ITab, depth + 1)
+			count, mayReturn  = backPropNodeCounterRec(n.X, depth + 1)
+			sC, sR           := backPropNodeCounterRec(n.SrcRType, depth + 1)
+			rC, rR           := backPropNodeCounterRec(n.RType, depth + 1)
+			iC, iR           := backPropNodeCounterRec(n.ITab, depth + 1)
 			count  = max(count, sC, rC)
 			count  = max(count, iC, 0)
-		case ir.ONAME, ir.OTYPE, ir.OLITERAL, ir.OBREAK, ir.OCONTINUE,
+			mayReturn = mayReturn || sR || rR || iR
+		case ir.ODYNAMICTYPE:
+			n := n.(*ir.DynamicType)
+			count, mayReturn  = backPropNodeCounterRec(n.RType, depth + 1)
+			iC, iR           := backPropNodeCounterRec(n.ITab, depth + 1)
+			count  = max(count, iC, 0)
+			mayReturn = mayReturn || iR
+		case ir.ONAME, ir.OLITERAL:
+			count = 0
+		case ir.OTYPE, ir.OBREAK, ir.OCONTINUE,
 			ir.OFALL, ir.OGOTO, ir.OLINKSYMOFFSET, ir.ONIL, ir.OCLOSURE,
 			ir.OLABEL:
 			// These are list nodes, nothing to propagate here
@@ -476,14 +554,25 @@ func backPropNodeCounterRec(n ir.Node, depth int) int64 {
 		default:
 			count = n.Counter()
 	}
+	count = max(count, n.Counter(), 0)
 	n.SetCounter(count)
-	return count
+
+if PRINT {
+	println("Back prop for: ", n.Op().String(), " (", n.Pos().Line() , ") setting counter: ", max(count, n.Counter(), 0))
+}
+
+//for i := 0; i < depth; i++ {
+//	print("-") // NOCOMMIT
+//}
+//println(">", n.Op().String(), "  ", count, "  ", mayReturn) // NOCOMMIT
+
+	return count, mayReturn
 }
 
 // forwardPropNodeListCounterRec for all nodes in the list launch forward propagation
-func forwardPropNodeListCounterRec(nodes ir.Nodes, c int64, depth int) {
+func forwardPropNodeListCounterRec(nodes ir.Nodes, depth int) {
 	for _, n := range nodes {
-		forwardPropNodeCounterRec(n, c, depth)
+		forwardPropNodeCounterRec(n, n.Counter(), depth)
 	}
 }
 
@@ -507,46 +596,78 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 		return res
 	}
 
-	n.SetCounter(c)
+	if n.Op() != ir.ONAME && n.Op() != ir.OLITERAL {
+if PRINT {
+	for i := 0; i < depth; i++ {
+		print("_") // NOCOMMIT
+	}
+	println(" ", n.Op().String(), " (", n.Pos().Line(), ") counter: ", c) // NOCOMMIT
+}
+		n.SetCounter(c)
+	}
 	switch n.Op() {
 		case ir.OBLOCK:
 			n := n.(*ir.BlockStmt)
-			forwardPropNodeListCounterRec(n.List, c, depth + 1)
+			forwardPropNodeListCounterRec(n.List, depth + 1)
 		case ir.OIF:
 			n := n.(*ir.IfStmt)
 
 			forwardPropNodeCounterRec(n.Cond, c, depth + 1)
 
 			bodyCount := int64(0)
-			if len(n.Body) != 0 {
-				bodyCount = n.Body[0].Counter() // All counters in list are equal
-			}
-
-			if n.Else == nil {
-				// Without else we can not correct the body counter
-				forwardPropNodeListCounterRec(n.Body, bodyCount, depth + 1)
-				break;
+			bodyLen   := len(n.Body)
+			if bodyLen != 0 {
+				// The first node has the maximal counter
+				bodyCount = n.Body[0].Counter()
 			}
 
 			elseCount := int64(0)
-			if len(n.Else) != 0 {
+			if n.Else == nil {
+				// Without else we can not correct the body counter
+				bodyCount = max(c, bodyCount, 0)
+				if bodyLen != 0 {
+					n.Body[0].SetCounter(bodyCount)
+					forwardPropNodeListCounterRec(n.Body, depth + 1)
+				}
+			} else if len(n.Else) != 0 {
 				elseCount = n.Else[0].Counter() // All counters in list are equal
 			}
 			if bodyCount + elseCount > c {
-				panic("Error")
+				// This is case, when sum of branches counters is larger, than the
+				// counter of if condition itself. This happens when one of branch
+				// is executed longer, than the if condition. In this case we count
+				// correct condition counter as the sum of its branches
+				bodyCount = bodyCount + elseCount
+				n.Body[0].SetCounter(bodyCount)
+				forwardPropNodeListCounterRec(n.Body, depth + 1)
 			}
 
 			if bodyCount + elseCount < c {
 				// Sum of two if branches is lesser than if counter
 				// We should correct the counters
-				ratio := float64(0.5)
 				if bodyCount + elseCount != 0 {
-					ratio = float64(c) /  float64(bodyCount + elseCount)
+					// At least one branch edge has non-zero profile
+					ratio     := float64(c) / float64(bodyCount + elseCount)
+					bodyCount  = int64(float64(bodyCount) * ratio)
+					elseCount  = c - bodyCount
+				} else {
+					// If both branches are zero, we assume that the probability is 0.5
+					if n.Else != nil {
+						bodyCount = int64(float64(c) * 0.5)
+					} else {
+						bodyCount = c
+					}
+					elseCount = c - bodyCount
 				}
-				bodyCount = int64(float64(bodyCount) * ratio)
-				elseCount = c - bodyCount
-				forwardPropNodeListCounterRec(n.Body, bodyCount, depth + 1)
-				forwardPropNodeListCounterRec(n.Else, elseCount, depth + 1)
+				
+				if len(n.Body) > 0 {
+					n.Body[0].SetCounter(bodyCount)
+				}
+				if len(n.Else) > 0 {
+					n.Else[0].SetCounter(elseCount)
+				}
+				forwardPropNodeListCounterRec(n.Body, depth + 1)
+				forwardPropNodeListCounterRec(n.Else, depth + 1)
 			}
 		case ir.OAS:
 			n := n.(*ir.AssignStmt)
@@ -555,8 +676,8 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 		case ir.OAS2, ir.OAS2DOTTYPE, ir.OAS2FUNC, ir.OAS2MAPR,
 			ir.OAS2RECV, ir.OSELRECV2:
 			n := n.(*ir.AssignListStmt)
-			forwardPropNodeListCounterRec(n.Lhs, c, depth + 1)
-			forwardPropNodeListCounterRec(n.Rhs, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Lhs, depth + 1)
+			forwardPropNodeListCounterRec(n.Rhs, depth + 1)
 		case ir.OASOP:
 			n := n.(*ir.AssignOpStmt)
 			forwardPropNodeCounterRec(n.X, c, depth + 1)
@@ -579,7 +700,7 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 
 			c = max(bC, cC, pC)
 			if n.Body != nil {
-				forwardPropNodeListCounterRec(n.Body, c, depth + 1)
+				forwardPropNodeListCounterRec(n.Body, depth + 1)
 			}
 			if n.Cond != nil {
 				forwardPropNodeCounterRec(n.Cond, c, depth + 1)
@@ -589,7 +710,7 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 			}
 		case ir.ORETURN:
 			n := n.(*ir.ReturnStmt)
-			forwardPropNodeListCounterRec(n.Results, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Results, depth + 1)
 		case ir.OADDR, ir.OPTRLIT:
 			n := n.(*ir.AddrExpr)
 			forwardPropNodeCounterRec(n.X, c, depth + 1)
@@ -602,22 +723,21 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 		case ir.OARRAYLIT, ir.OMAPLIT, ir.OSLICELIT, ir.OSTRUCTLIT:
 			n := n.(*ir.CompLitExpr)
 			forwardPropNodeCounterRec(n.RType, c, depth + 1)
-			forwardPropNodeListCounterRec(n.List, c, depth + 1)
+			forwardPropNodeListCounterRec(n.List, depth + 1)
 		case ir.OAPPEND, ir.OCALL, ir.OCALLFUNC, ir.OCALLINTER, ir.OCALLMETH,
 			ir.ODELETE, ir.OGETG, ir.OGETCALLERPC, ir.OGETCALLERSP,
 			ir.OMAKE, ir.OMAX, ir.OMIN, ir.OPRINT, ir.OPRINTLN,
 			ir.ORECOVER, ir.ORECOVERFP:
-
 			n := n.(*ir.CallExpr)
 
 			forwardPropNodeCounterRec(n.Fun, c, depth + 1)
-			forwardPropNodeListCounterRec(n.Args, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Args, depth + 1)
 			forwardPropNodeCounterRec(n.DeferAt, c, depth + 1)
 			forwardPropNodeCounterRec(n.RType, c ,depth + 1)
 		case ir.OADDSTR:
 			n := n.(*ir.AddStringExpr)
 			if n.List != nil {
-				forwardPropNodeListCounterRec(n.List, c, depth + 1)
+				forwardPropNodeListCounterRec(n.List, depth + 1)
 			}
 		case ir.OSTRUCTKEY:
 			n := n.(*ir.StructKeyExpr)
@@ -676,11 +796,19 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 			forwardPropNodeCounterRec(n.RType, c, depth + 1)
 			forwardPropNodeCounterRec(n.Key, c, depth + 1)
 			forwardPropNodeCounterRec(n.Value, c, depth + 1)
-			forwardPropNodeListCounterRec(n.Body, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Body, depth + 1)
 		case ir.OSWITCH:
 			n := n.(*ir.SwitchStmt)
 			forwardPropNodeCounterRec(n.Tag, c, depth + 1)
-			// TODO Implement cases
+
+			for _, cs := range n.Cases {
+				forwardPropNodeCounterRec(cs, cs.Counter(), depth + 1)
+			}
+		case ir.OCASE:
+			n := n.(*ir.CaseClause)
+			forwardPropNodeListCounterRec(n.List, depth + 1)
+			forwardPropNodeListCounterRec(n.RTypes, depth + 1)
+			forwardPropNodeListCounterRec(n.Body, depth + 1)
 		case ir.OTYPESW:
 			n := n.(*ir.TypeSwitchGuard)
 			forwardPropNodeCounterRec(n.X, c, depth + 1)
@@ -693,11 +821,15 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 			forwardPropNodeCounterRec(n.Value, c, depth + 1)
 		case ir.OSELECT:
 			n := n.(*ir.SelectStmt)
-			forwardPropNodeListCounterRec(n.Compiled, c, depth + 1)
+			forwardPropNodeListCounterRec(n.Compiled, depth + 1)
 		case ir.ODYNAMICDOTTYPE, ir.ODYNAMICDOTTYPE2:
 			n := n.(*ir.DynamicTypeAssertExpr)
 			forwardPropNodeCounterRec(n.X, c, depth + 1)
 			forwardPropNodeCounterRec(n.SrcRType, c, depth + 1)
+			forwardPropNodeCounterRec(n.RType, c, depth + 1)
+			forwardPropNodeCounterRec(n.ITab, c, depth + 1)
+		case ir.ODYNAMICTYPE:
+			n := n.(*ir.DynamicType)
 			forwardPropNodeCounterRec(n.RType, c, depth + 1)
 			forwardPropNodeCounterRec(n.ITab, c, depth + 1)
 		case ir.ONAME, ir.OTYPE, ir.OLITERAL, ir.OBREAK, ir.OCONTINUE,
@@ -705,7 +837,7 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 			ir.OLABEL:
 			// These are list nodes, nothing to propagate here
 		default:
-			fmt.Println()
+			println(int(n.Op()), "  ", ir.OJUMPTABLE)
 			panic("Not implemented IR profile propagation for node type: " + string(ir.Op(n.Op())))
 	}
 	return
@@ -713,8 +845,8 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int) {
 
 // propagateCounters this function starts back and forward counter propagation
 func propagateCounters(f *ir.Func) {
-	c := backPropNodeListCounterRec(f.Body, 0)
-	forwardPropNodeListCounterRec(f.Body, c, 0)
+	backPropNodeListCounterRec(f.Body, 0)
+	forwardPropNodeListCounterRec(f.Body, 0)
 }
 
 
@@ -769,7 +901,14 @@ func loadCounters(p *profile.Profile) {
 		if !ok {
 			return
 		}
+		if n.Op() == ir.ONAME || n.Op() == ir.OLITERAL {
+			return
+		}
 		n.SetCounter(sample[0].Value[0])
+
+if strings.Contains(ir.LinkFuncName(fs.Func), "testFor1") {
+	println("Loading counter: ", n.Op().String(), " (", n.Pos().Line() ,") setting counter: ", sample[0].Value[0])
+}
 	})
 	}
 }

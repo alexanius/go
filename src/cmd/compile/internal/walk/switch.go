@@ -502,6 +502,7 @@ func walkSwitchType(sw *ir.SwitchStmt) {
 				as := ir.NewAssignListStmt(c.pos, ir.OAS2,
 					[]ir.Node{ir.BlankNode, s.okName},                               // _, ok =
 					[]ir.Node{ir.NewTypeAssertExpr(c.pos, s.srcName, c.typ.Type())}) // iface.(type)
+					as.SetCounter(sw.Counter()) // TODO: is it correct?
 				nif := ir.NewIfStmt(c.pos, s.okName, []ir.Node{c.jmp}, nil)
 				clauses = append(clauses, typeClause{
 					hash: types.TypeHash(c.typ.Type()),
@@ -583,6 +584,7 @@ caseLoop:
 			dot.SetTypecheck(1)
 
 			as := ir.NewAssignListStmt(c.pos, ir.OAS2, nil, nil)
+			as.SetCounter(sw.Counter()) // TODO: is it correct?
 			as.Lhs = []ir.Node{ir.BlankNode, s.okName} // _, ok =
 			as.Rhs = []ir.Node{dot}
 			typecheck.Stmt(as)
@@ -666,7 +668,7 @@ caseLoop:
 				val.SetTypecheck(1)
 			}
 			l := []ir.Node{
-				ir.NewDecl(ncase.Pos(), ir.ODCL, caseVar),
+				ir.NewDecl(ncase.Pos(), ir.ODCL, caseVar, ncase.Counter()),
 				ir.NewAssignStmt(ncase.Pos(), caseVar, val),
 			}
 			typecheck.Stmts(l)

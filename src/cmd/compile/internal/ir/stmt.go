@@ -12,15 +12,27 @@ import (
 	"go/constant"
 )
 
+func max(a, b, c int64) int64 {
+	res := a
+	if res < b {
+		res = b
+	}
+	if res < c {
+		return c
+	}
+	return res
+}
+
 // A Decl is a declaration of a const, type, or var. (A declared func is a Func.)
 type Decl struct {
 	miniNode
 	X *Name // the thing being declared
 }
 
-func NewDecl(pos src.XPos, op Op, x *Name) *Decl {
+func NewDecl(pos src.XPos, op Op, x *Name, c int64) *Decl {
 	n := &Decl{X: x}
 	n.pos = pos
+	n.SetCounter(c)
 	switch op {
 	default:
 		panic("invalid Decl op " + op.String())
@@ -66,6 +78,9 @@ type AssignListStmt struct {
 	Rhs Nodes
 }
 
+// NOTE: in some cases we can not set counter from lhs and rhs,
+//	 so counter for ListStmt should be set manually
+// TODO: may be set counter as parameter?
 func NewAssignListStmt(pos src.XPos, op Op, lhs, rhs []Node) *AssignListStmt {
 	n := &AssignListStmt{}
 	n.pos = pos
@@ -95,6 +110,14 @@ type AssignStmt struct {
 
 func NewAssignStmt(pos src.XPos, x, y Node) *AssignStmt {
 	n := &AssignStmt{X: x, Y: y}
+	var xC, yC int64
+	if x != nil {
+		xC = x.Counter()
+	}
+	if y != nil {
+		yC = y.Counter()
+	}
+	n.SetCounter(max(xC, yC, 0))
 	n.pos = pos
 	n.op = OAS
 	return n
@@ -122,6 +145,14 @@ func NewAssignOpStmt(pos src.XPos, asOp Op, x, y Node) *AssignOpStmt {
 	n := &AssignOpStmt{AsOp: asOp, X: x, Y: y}
 	n.pos = pos
 	n.op = OASOP
+	var xC, yC int64
+	if x != nil {
+		xC = x.Counter()
+	}
+	if y != nil {
+		yC = y.Counter()
+	}
+	n.SetCounter(max(xC, yC, 0))
 	return n
 }
 
@@ -140,6 +171,9 @@ func NewBlockStmt(pos src.XPos, counter int64, list []Node) *BlockStmt {
 		if len(list) > 0 {
 			n.pos = list[0].Pos()
 		}
+	}
+	if len(list) > 0 {
+		n.SetCounter(max(list[0].Counter(), 0, 0))
 	}
 	n.op = OBLOCK
 	n.List = list
@@ -162,6 +196,7 @@ func NewBranchStmt(pos src.XPos, op Op, label *types.Sym) *BranchStmt {
 	n := &BranchStmt{Label: label}
 	n.pos = pos
 	n.op = op
+	// TODO counter?
 	return n
 }
 
@@ -199,6 +234,9 @@ func NewCaseStmt(pos src.XPos, list, body []Node) *CaseClause {
 	n := &CaseClause{List: list, Body: body}
 	n.pos = pos
 	n.op = OCASE
+	if len(body) > 0 {
+		n.SetCounter(max(body[0].Counter(), 0, 0))
+	}
 	return n
 }
 
@@ -212,6 +250,9 @@ func NewCommStmt(pos src.XPos, comm Node, body []Node) *CommClause {
 	n := &CommClause{Comm: comm, Body: body}
 	n.pos = pos
 	n.op = OCASE
+	if len(body) > 0 {
+		n.SetCounter(max(body[0].Counter(), 0, 0))
+	}
 	return n
 }
 
@@ -232,6 +273,7 @@ func NewForStmt(pos src.XPos, init Node, cond, post Node, body []Node, distinctV
 	if init != nil {
 		n.init = []Node{init}
 	}
+	n.SetCounter(1) // TODO this is incorrect
 	n.Body = body
 	n.DistinctVars = distinctVars
 	return n
@@ -257,6 +299,9 @@ func NewGoDeferStmt(pos src.XPos, op Op, call Node) *GoDeferStmt {
 	default:
 		panic("NewGoDeferStmt " + op.String())
 	}
+	if call != nil {
+		n.SetCounter(max(call.Counter(), 0, 0))
+	}
 	return n
 }
 
@@ -275,6 +320,17 @@ func NewIfStmt(pos src.XPos, cond Node, body, els []Node) *IfStmt {
 	n.op = OIF
 	n.Body = body
 	n.Else = els
+	var bC, cC, eC int64
+	if len(body) > 0 {
+		bC = body[0].Counter()
+	}
+	if cond != nil {
+		cC = cond.Counter()
+	}
+	if len(els) > 0 {
+		eC = els[0].Counter()
+	}
+	n.SetCounter(max(bC, cC, eC))
 	return n
 }
 
@@ -308,6 +364,7 @@ func NewJumpTableStmt(pos src.XPos, idx Node) *JumpTableStmt {
 	n := &JumpTableStmt{Idx: idx}
 	n.pos = pos
 	n.op = OJUMPTABLE
+	n.SetCounter(idx.Counter())
 	return n
 }
 
@@ -348,6 +405,7 @@ func NewInterfaceSwitchStmt(pos src.XPos, case_, itab, runtimeType, hash Node, d
 	}
 	n.pos = pos
 	n.op = OINTERFACESWITCH
+	// TODO: counter?
 	return n
 }
 
@@ -361,6 +419,7 @@ func NewInlineMarkStmt(pos src.XPos, index int64) *InlineMarkStmt {
 	n := &InlineMarkStmt{Index: index}
 	n.pos = pos
 	n.op = OINLMARK
+	// TODO: counter?
 	return n
 }
 
@@ -377,6 +436,7 @@ func NewLabelStmt(pos src.XPos, label *types.Sym) *LabelStmt {
 	n := &LabelStmt{Label: label}
 	n.pos = pos
 	n.op = OLABEL
+	// TODO: counter?
 	return n
 }
 
@@ -410,6 +470,9 @@ func NewRangeStmt(pos src.XPos, key, value, x Node, body []Node, distinctVars bo
 	n.op = ORANGE
 	n.Body = body
 	n.DistinctVars = distinctVars
+	if len(body) > 0 {
+		n.SetCounter(body[0].Counter())
+	}
 	return n
 }
 
@@ -424,6 +487,9 @@ func NewReturnStmt(pos src.XPos, results []Node) *ReturnStmt {
 	n.pos = pos
 	n.op = ORETURN
 	n.Results = results
+	if len(results) > 0 {
+		n.SetCounter(results[0].Counter())
+	}
 	return n
 }
 
@@ -441,6 +507,7 @@ func NewSelectStmt(pos src.XPos, cases []*CommClause) *SelectStmt {
 	n := &SelectStmt{Cases: cases}
 	n.pos = pos
 	n.op = OSELECT
+	// TODO: counter?
 	return n
 }
 
@@ -455,6 +522,7 @@ func NewSendStmt(pos src.XPos, ch, value Node) *SendStmt {
 	n := &SendStmt{Chan: ch, Value: value}
 	n.pos = pos
 	n.op = OSEND
+	n.SetCounter(max(ch.Counter(), value.Counter(), 0))
 	return n
 }
 
@@ -473,6 +541,7 @@ func NewSwitchStmt(pos src.XPos, tag Node, cases []*CaseClause) *SwitchStmt {
 	n := &SwitchStmt{Tag: tag, Cases: cases}
 	n.pos = pos
 	n.op = OSWITCH
+	// TODO: counter?
 	return n
 }
 
@@ -487,6 +556,9 @@ func NewTailCallStmt(pos src.XPos, call *CallExpr) *TailCallStmt {
 	n := &TailCallStmt{Call: call}
 	n.pos = pos
 	n.op = OTAILCALL
+	if call != nil {
+		n.SetCounter(call.Counter())
+	}
 	return n
 }
 
@@ -502,5 +574,6 @@ func NewTypeSwitchGuard(pos src.XPos, tag *Ident, x Node) *TypeSwitchGuard {
 	n := &TypeSwitchGuard{Tag: tag, X: x}
 	n.pos = pos
 	n.op = OTYPESW
+	n.SetCounter(x.Counter())
 	return n
 }

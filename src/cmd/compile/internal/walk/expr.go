@@ -461,6 +461,7 @@ func safeExpr(n ir.Node, init *ir.Nodes) ir.Node {
 func copyExpr(n ir.Node, t *types.Type, init *ir.Nodes) ir.Node {
 	l := typecheck.TempAt(base.Pos, ir.CurFunc, t)
 	appendWalkStmt(init, ir.NewAssignStmt(base.Pos, l, n))
+	l.SetCounter(n.Counter())
 	return l
 }
 

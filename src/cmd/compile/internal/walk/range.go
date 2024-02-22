@@ -277,6 +277,7 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 		lhs := []ir.Node{hv1, hb}
 		rhs := []ir.Node{ir.NewUnaryExpr(base.Pos, ir.ORECV, ha)}
 		a := ir.NewAssignListStmt(base.Pos, ir.OAS2RECV, lhs, rhs)
+		a.SetCounter(nrange.Counter())
 		a.SetTypecheck(1)
 		nfor.Cond = ir.InitExpr([]ir.Node{a}, nfor.Cond)
 		if v1 == nil {
@@ -340,6 +341,7 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 		fn := typecheck.LookupRuntime("decoderune")
 		call := mkcall1(fn, fn.Type().ResultsTuple(), &nif.Else, ha, hv1)
 		a := ir.NewAssignListStmt(base.Pos, ir.OAS2, []ir.Node{hv2, hv1}, []ir.Node{call})
+		a.SetCounter(nrange.Counter())
 		nif.Else.Append(a)
 
 		body = append(body, nif)
@@ -388,7 +390,9 @@ func rangeAssign2(n *ir.RangeStmt, key, value ir.Node) ir.Node {
 	// of the form "v1, a[v1] = range".
 	key = rangeConvert(n, n.Key.Type(), key, n.KeyTypeWord, n.KeySrcRType)
 	value = rangeConvert(n, n.Value.Type(), value, n.ValueTypeWord, n.ValueSrcRType)
-	return ir.NewAssignListStmt(n.Pos(), ir.OAS2, []ir.Node{n.Key, n.Value}, []ir.Node{key, value})
+	res := ir.NewAssignListStmt(n.Pos(), ir.OAS2, []ir.Node{n.Key, n.Value}, []ir.Node{key, value})
+	res.SetCounter(n.Counter())
+	return res
 }
 
 // rangeConvert returns src, converted to dst if necessary. If a
