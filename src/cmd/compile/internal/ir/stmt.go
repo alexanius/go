@@ -10,6 +10,9 @@ import (
 	"cmd/internal/obj"
 	"cmd/internal/src"
 	"go/constant"
+
+//	"runtime/debug"
+//	"os"
 )
 
 func max(a, b, c int64) int64 {
@@ -117,6 +120,11 @@ func NewAssignStmt(pos src.XPos, x, y Node) *AssignStmt {
 	if y != nil {
 		yC = y.Counter()
 	}
+	
+//_, bbb := os.LookupEnv("AAA")
+//if bbb && pos.Line() == 26 {
+//	debug.PrintStack()
+//}
 	n.SetCounter(max(xC, yC, 0))
 	n.pos = pos
 	n.op = OAS
