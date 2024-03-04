@@ -3951,8 +3951,7 @@ func addTailCall(pos src.XPos, fn *ir.Func, recv ir.Node, method *types.Field) {
 		return
 	}
 
-	ret := ir.NewReturnStmt(pos, nil)
-	ret.Results = []ir.Node{call}
+	ret := ir.NewReturnStmt(pos, []ir.Node{call})
 	fn.Body.Append(ret)
 }
 

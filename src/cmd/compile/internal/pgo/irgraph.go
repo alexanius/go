@@ -399,13 +399,15 @@ if PRINT {
 	if n.Op() == ir.ORANGE && count > 0 {
 		// Same logic as for OFOR
 		count = 1
+	} else if n.Op() == ir.ORETURN {
+		mayReturn = true
 	}
 
 	count = max(count, n.Counter(), 0)
-	n.SetCounter(count)
 if PRINT {
-	println("Back set counter ", count, " to ", n.Op().String(), " at: ", n.Pos().Line())
+	println("Back set counter ", count, " to ", n.Op().String(), " at: ", n.Pos().Line(), " addr: ", &n, " old count: ", n.Counter())
 }
+	n.SetCounter(count)
 
 	return count, mayReturn
 }
@@ -461,7 +463,7 @@ if PRINT {
 		elseCount := int64(0)
 		if n.Else == nil {
 			// Without else we can not correct the body counter
-			bodyCount = max(c, bodyCount, 0)
+//			bodyCount = max(c, bodyCount, 0)
 			if bodyLen != 0 {
 				n.Body[0].SetCounter(bodyCount)
 				forwardPropNodeListCounterRec(n.Body, depth+1, watched)
@@ -479,7 +481,7 @@ if PRINT {
 			forwardPropNodeListCounterRec(n.Body, depth+1, watched)
 		}
 
-		if bodyCount+elseCount < c {
+		if bodyCount+elseCount < c && len(n.Else) != 0 {
 			// Sum of two if branches is lesser than if counter
 			// We should correct the counters
 			if bodyCount+elseCount != 0 {
@@ -591,8 +593,10 @@ func loadCounters(p *profile.Profile) {
 			}
 			name := ir.LinkFuncName(f)
 _, bbb := os.LookupEnv("AAA")
+
 if bbb {
-PRINT = PRINT || strings.Contains(ir.LinkFuncName(f), "testIf2")
+fff, _ := os.LookupEnv("GOSSAFUNC")
+PRINT = PRINT || strings.Contains(ir.LinkFuncName(f), fff)
 }
 			funcTable[name] = fs
 		}

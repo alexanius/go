@@ -11,6 +11,8 @@ import (
 	"cmd/internal/src"
 	"fmt"
 	"go/constant"
+//	"os"
+//	"runtime/debug"
 )
 
 // A miniNode is a minimal node implementation,
@@ -48,7 +50,13 @@ func (n *miniNode) posOr(pos src.XPos) src.XPos {
 // An embedding implementation can provide a SetOp if desired.
 // (The panicking SetOp is with the other panics below.)
 func (n *miniNode) Counter() int64     { return n.counter }
-func (n *miniNode) SetCounter(c int64) { n.counter = c }
+func (n *miniNode) SetCounter(c int64) {
+//_, bbb := os.LookupEnv("AAA")
+//if bbb && n.Pos().Line() == 24 && n.Op() == ORETURN {
+//	println("------------  ", c)
+//	debug.PrintStack()
+//}
+	n.counter = c }
 func (n *miniNode) Op() Op             { return n.op }
 func (n *miniNode) Pos() src.XPos      { return n.pos }
 func (n *miniNode) SetPos(x src.XPos)  { n.pos = x }

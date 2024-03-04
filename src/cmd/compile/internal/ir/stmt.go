@@ -338,7 +338,7 @@ func NewIfStmt(pos src.XPos, cond Node, body, els []Node) *IfStmt {
 	if len(els) > 0 {
 		eC = els[0].Counter()
 	}
-	n.SetCounter(max(bC, cC, eC))
+	n.SetCounter(max(bC + eC, cC, 0))
 	return n
 }
 
