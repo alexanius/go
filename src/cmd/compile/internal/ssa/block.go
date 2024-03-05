@@ -5,6 +5,7 @@
 package ssa
 
 import (
+	"cmd/compile/internal/base"
 	"cmd/internal/src"
 	"fmt"
 )
@@ -119,7 +120,11 @@ type BlockKind int16
 
 // short form print
 func (b *Block) String() string {
-	return fmt.Sprintf("b%d", b.ID)
+	if base.Flag.BbPgoProfile {
+		return fmt.Sprintf("b%d (%d)", b.ID, b.Counter)
+	} else {
+		return fmt.Sprintf("b%d", b.ID)
+	}
 }
 
 // long form print

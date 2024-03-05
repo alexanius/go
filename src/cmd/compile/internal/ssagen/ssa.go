@@ -564,17 +564,7 @@ func buildssa(fn *ir.Func, worker int) *ssa.Func {
 	// fallthrough to exit
 	if s.curBlock != nil {
 		s.pushLine(fn.Endlineno)
-		b := s.exit()
-PRINT := false
-_, bbb := os.LookupEnv("AAA")
-if bbb {
-fff, _ := os.LookupEnv("GOSSAFUNC")
-PRINT = strings.Contains(ir.LinkFuncName(s.curfn), fff)
-}
-if PRINT {
-	println("fallthrough block: ", 0, "  ", b.ID)
-}
-//		b.Counter = 0
+		s.exit()
 		s.popLine()
 	}
 
@@ -984,15 +974,6 @@ func (s *state) startBlock(b *ssa.Block, c int64) {
 	if s.curBlock != nil {
 		s.Fatalf("starting block %v when block %v has not ended", b, s.curBlock)
 	}
-PRINT := false
-_, bbb := os.LookupEnv("AAA")
-if bbb {
-fff, _ := os.LookupEnv("GOSSAFUNC")
-PRINT = strings.Contains(ir.LinkFuncName(s.curfn), fff)
-}
-if PRINT {
-	println("  Debug: ", b.ID, "   ", c)
-}
 	s.curBlock = b
 	b.Counter = c
 	s.vars = map[ir.Node]*ssa.Value{}
@@ -1458,12 +1439,6 @@ func (s *state) stmtList(l ir.Nodes) {
 
 // stmt converts the statement n to SSA and adds it to s.
 func (s *state) stmt(n ir.Node) {
-PRINT := false
-_, bbb := os.LookupEnv("AAA")
-if bbb  {
-fff, _ := os.LookupEnv("GOSSAFUNC")
-PRINT = strings.Contains(ir.LinkFuncName(s.curfn), fff)
-}
 	s.pushLine(n.Pos())
 	defer s.popLine()
 
@@ -1752,9 +1727,6 @@ PRINT = strings.Contains(ir.LinkFuncName(s.curfn), fff)
 		s.assignWhichMayOverlap(n.X, r, deref, skip, mayOverlap)
 
 	case ir.OIF:
-if PRINT {
-	println("Debug: ", n.Counter())
-}
 		n := n.(*ir.IfStmt)
 		if ir.IsConst(n.Cond, constant.Bool) {
 			s.stmtList(n.Cond.Init())
@@ -1786,9 +1758,6 @@ if PRINT {
 		s.condBranch(n.Cond, bThen, bElse, likely)
 
 		if len(n.Body) != 0 {
-if PRINT {
-	println("Start body block: ", n.Body[0].Counter(), "  ", bThen.ID)
-}
 			s.startBlock(bThen, n.Body[0].Counter())
 			s.stmtList(n.Body)
 			if b := s.endBlock(); b != nil {
@@ -1796,9 +1765,6 @@ if PRINT {
 			}
 		}
 		if len(n.Else) != 0 {
-if PRINT {
-	println("Start else block: ", n.Else[0].Counter(), "  ", bElse.ID)
-}
 			s.startBlock(bElse, n.Else[0].Counter())
 			s.stmtList(n.Else)
 			if b := s.endBlock(); b != nil {
@@ -1811,9 +1777,6 @@ if PRINT {
 		n := n.(*ir.ReturnStmt)
 		s.stmtList(n.Results)
 		b := s.exit()
-if PRINT {
-	println("Ret block: ", n.Counter(), "  ", b.ID)
-}
 		b.Counter = n.Counter()
 		b.Pos = s.lastPos.WithIsStmt()
 
@@ -5578,15 +5541,6 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 		r := s.f.NewBlock(ssa.BlockPlain)
 		s.startBlock(r, n.Counter())
 		bb := s.exit()
-PRINT := false
-_, bbb := os.LookupEnv("AAA")
-if bbb {
-fff, _ := os.LookupEnv("GOSSAFUNC")
-PRINT = strings.Contains(ir.LinkFuncName(s.curfn), fff)
-}
-if PRINT {
-	println("Defer block: ", 0, "  ", bb.ID)
-}
 		bb.Counter = 0 // We assume, that panic is always zero
 		b.AddEdgeTo(r)
 		b.Likely = ssa.BranchLikely
@@ -5865,15 +5819,6 @@ func (s *state) boundsCheck(idx, len *ssa.Value, kind ssa.BoundsKind, bounded bo
 	}
 
 	bNext := s.f.NewBlock(ssa.BlockPlain)
-PRINT := false
-_, bbb := os.LookupEnv("AAA")
-if bbb  {
-fff, _ := os.LookupEnv("GOSSAFUNC")
-PRINT = strings.Contains(ir.LinkFuncName(s.curfn), fff)
-}
-if PRINT {
-	println("bNext block: ", s.lastCounter, "  ", bNext.ID)
-}
 	bNext.Counter = s.lastCounter
 	bPanic := s.f.NewBlock(ssa.BlockExit)
 
@@ -7705,7 +7650,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			} else {
 				s = "   " // most value and branch strings are 2-3 characters long
 			}
-			f.Logf(" %-6s\t%.5d (%s)\t%s\n", s, p.Pc, p.InnermostLineNumber(), p.InstructionString())
+			f.Logf(" %-10s\t%.5d (%s)\t%s\n", s, p.Pc, p.InnermostLineNumber(), p.InstructionString())
 		}
 	}
 	if f.HTMLWriter != nil { // spew to ssa.html

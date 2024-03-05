@@ -145,6 +145,8 @@ type Profile struct {
 
 var wantHdr = "GO PREPROFILE V1\n"
 
+var bbDebugPrint = false
+
 func isPreProfileFile(r *bufio.Reader) (bool, error) {
 	hdr, err := r.Peek(len(wantHdr))
 	if err == io.EOF {
@@ -274,8 +276,12 @@ func backPropNodeListCounterRec(nodes ir.Nodes, depth int, watched map[ir.Node]b
 
 	setCounter := func (nds ir.Nodes, s, e int, c int64) {
 		for i := s; i <= e; i++ {
-			if shouldSetCounter(nds[i].Op()) {
-				nds[i].SetCounter(c)
+			n := nds[i]
+			if shouldSetCounter(n.Op()) {
+				if bbDebugPrint {
+					println("back_prop (list): ", n.Op().String(), ":", n.Pos().Line(), " old: ", n.Counter(), " new: ", c)
+				}
+				n.SetCounter(c)
 			}
 		}
 	}
@@ -324,15 +330,11 @@ func backPropNodeCounterRec(n ir.Node, depth int, watched map[ir.Node]bool) (int
 	}
 	watched[n] = true
 
-	max := func(x, y, z int64) int64 {
-		res := x
-		if y > res {
-			res = y
+	max := func(x, y int64) int64 {
+		if x > y {
+			return x
 		}
-		if z > res {
-			return z
-		}
-		return res
+		return y
 	}
 	var mayReturn bool
 	var count int64
@@ -344,7 +346,7 @@ func backPropNodeCounterRec(n ir.Node, depth int, watched map[ir.Node]bool) (int
 		eC, eR := backPropNodeListCounterRec(n.Else, depth+1, watched)
 
 		sum := bC + eC
-		count = max(count, sum, 0)
+		count = max(count, sum)
 		mayReturn = mayReturn || bR || eR
 	} else if n.Op() == ir.OFOR {
 		n := n.(*ir.ForStmt)
@@ -383,15 +385,12 @@ func backPropNodeCounterRec(n ir.Node, depth int, watched map[ir.Node]bool) (int
 
 			switch val := vf.Interface().(type) {
 			case ir.Node:
-if PRINT {
-	println("!!! ", n, " to ", n.Op().String(), " at: ", val)
-}
 				fC, mR = backPropNodeCounterRec(val, depth+1, watched)
 			case ir.Nodes:
 				fC, mR = backPropNodeListCounterRec(val, depth+1, watched)
 			}
 
-			count = max(count, fC, 0)
+			count = max(count, fC)
 			mayReturn = mayReturn || mR
 		}
 	}
@@ -403,10 +402,10 @@ if PRINT {
 		mayReturn = true
 	}
 
-	count = max(count, n.Counter(), 0)
-if PRINT {
-	println("Back set counter ", count, " to ", n.Op().String(), " at: ", n.Pos().Line(), " addr: ", &n, " old count: ", n.Counter())
-}
+	count = max(count, n.Counter())
+	if bbDebugPrint {
+		println("back_prop: ", n.Op().String(), ":", n.Pos().Line(), " old: ", n.Counter(), " new: ", count)
+	}
 	n.SetCounter(count)
 
 	return count, mayReturn
@@ -444,10 +443,10 @@ func forwardPropNodeCounterRec(n ir.Node, c int64, depth int, watched map[ir.Nod
 	}
 
 	if shouldSetCounter(n.Op()) {
+		if bbDebugPrint {
+			println("forward_prop: ", n.Op().String(), ":", n.Pos().Line(), " old: ", n.Counter(), " new: ", c)
+		}
 		n.SetCounter(c)
-if PRINT {
-	println("Forward set counter ", c, " to ", n.Op().String(), " at: ", n.Pos().Line())
-}
 	}
 
 	if n.Op() == ir.OIF {
@@ -459,26 +458,61 @@ if PRINT {
 			// The first node has the maximal counter
 			bodyCount = n.Body[0].Counter()
 		}
-
 		elseCount := int64(0)
-		if n.Else == nil {
+		elseLen := len(n.Else)
+		if elseLen != 0 {
+			// The first node has the maximal counter
+			elseCount = n.Else[0].Counter()
+		}
+
+		condCount := n.Cond.Counter()
+
+		if bodyCount + elseCount > c {
+			// This is case, when sum of branches counters is larger, than the
+			// counter of if condition itself. This happens when one of branch
+			// is executed longer, than the if condition. In this case we count
+			// correct condition counter as the sum of its branches
+			c = bodyCount + elseCount
+			if condCount > c {
+				// NOTE this is impossible after back propagation
+				c = condCount
+			}
+		}
+
+		if condCount < c {
+			// The counter of the condition and the counter of IF node should be equal
+			condCount = c
+		}
+
+		if elseLen == 0 {
+			// If we have no else branch - we always go to the body
+			bodyCount = c
+		}
+		// NOTE: we could correct both branches to make true the equation bodyCount + elseCount == ifCount
+		//       but currently we do not need it.
+
+		if bodyLen != 0 {
+			n.Body[0].SetCounter(bodyCount)
+			forwardPropNodeListCounterRec(n.Body, depth+1, watched)
+		}
+
+		if elseLen != 0 {
+			n.Else[0].SetCounter(elseCount)
+			forwardPropNodeListCounterRec(n.Else, depth+1, watched)
+		}
+		forwardPropNodeCounterRec(n.Cond, c, depth+1, watched)
+
+/*		if n.Else == nil {
 			// Without else we can not correct the body counter
-//			bodyCount = max(c, bodyCount, 0)
 			if bodyLen != 0 {
+				if bbDebugPrint {
+					println("forward_prop (body correct0): ", n.Op().String(), ":", n.Pos().Line(), " old: ", n.Counter(), " new: ", bodyCount)
+				}
 				n.Body[0].SetCounter(bodyCount)
 				forwardPropNodeListCounterRec(n.Body, depth+1, watched)
 			}
 		} else if len(n.Else) != 0 {
 			elseCount = n.Else[0].Counter() // All counters in list are equal
-		}
-		if bodyCount+elseCount > c {
-			// This is case, when sum of branches counters is larger, than the
-			// counter of if condition itself. This happens when one of branch
-			// is executed longer, than the if condition. In this case we count
-			// correct condition counter as the sum of its branches
-			bodyCount = bodyCount + elseCount
-			n.Body[0].SetCounter(bodyCount)
-			forwardPropNodeListCounterRec(n.Body, depth+1, watched)
 		}
 
 		if bodyCount+elseCount < c && len(n.Else) != 0 {
@@ -500,15 +534,21 @@ if PRINT {
 			}
 
 			if len(n.Body) > 0 {
+				if bbDebugPrint {
+					println("forward_prop (body correct2): ", n.Op().String(), ":", n.Pos().Line(), " old: ", n.Counter(), " new: ", bodyCount)
+				}
 				n.Body[0].SetCounter(bodyCount)
 			}
 			if len(n.Else) > 0 {
+				if bbDebugPrint {
+					println("forward_prop (else correct): ", n.Op().String(), ":", n.Pos().Line(), " old: ", n.Counter(), " new: ", elseCount)
+				}
 				n.Else[0].SetCounter(elseCount)
 			}
 			forwardPropNodeListCounterRec(n.Body, depth+1, watched)
 			forwardPropNodeListCounterRec(n.Else, depth+1, watched)
 		}
-		forwardPropNodeCounterRec(n.Cond, bodyCount+elseCount, depth+1, watched)
+		forwardPropNodeCounterRec(n.Cond, bodyCount+elseCount, depth+1, watched)*/
 	} else if n.Op() == ir.OFOR {
 		n := n.(*ir.ForStmt)
 		var bC, cC, pC int64
@@ -568,13 +608,20 @@ if PRINT {
 
 // PropagateCounters this function starts back and forward counter propagation
 func PropagateCounters(f *ir.Func) {
+	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
+	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
+		bbDebugPrint = true
+		println("Start bbpgo debug for: ", ir.LinkFuncName(f))
+	}
+
 	watched := map[ir.Node]bool{}
 	backPropNodeListCounterRec(f.Body, 0, watched)
 	watched = map[ir.Node]bool{}
 	forwardPropNodeListCounterRec(f.Body, 0, watched)
+
+	bbDebugPrint = false
 }
 
-var PRINT bool
 // loadCounters loads counters to the nodes of AST from profile
 func loadCounters(p *profile.Profile) {
 	// Build a table functionName <-> ir.Func to get quick search
@@ -592,12 +639,6 @@ func loadCounters(p *profile.Profile) {
 				Sample: make(map[int64][]*profile.Sample),
 			}
 			name := ir.LinkFuncName(f)
-_, bbb := os.LookupEnv("AAA")
-
-if bbb {
-fff, _ := os.LookupEnv("GOSSAFUNC")
-PRINT = PRINT || strings.Contains(ir.LinkFuncName(f), fff)
-}
 			funcTable[name] = fs
 		}
 	})
@@ -632,7 +673,7 @@ PRINT = PRINT || strings.Contains(ir.LinkFuncName(f), fff)
 			if !ok {
 				return
 			}
-			if n.Op() == ir.ONAME || n.Op() == ir.OLITERAL {
+			if shouldSetCounter(n.Op()) {
 				return
 			}
 			n.SetCounter(sample[0].Value[0])
