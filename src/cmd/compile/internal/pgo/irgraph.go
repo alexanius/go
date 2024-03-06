@@ -673,7 +673,7 @@ func loadCounters(p *profile.Profile) {
 			if !ok {
 				return
 			}
-			if shouldSetCounter(n.Op()) {
+			if !shouldSetCounter(n.Op()) {
 				return
 			}
 			n.SetCounter(sample[0].Value[0])
