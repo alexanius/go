@@ -166,7 +166,7 @@ func NewBinaryExpr(pos src.XPos, op Op, x, y Node) *BinaryExpr {
 	n := &BinaryExpr{X: x, Y: y}
 	n.pos = pos
 	n.SetOp(op)
-	n.SetCounter(max(x.Counter(), y.Counter(), 0))
+	n.SetCounter(max(x.Counter(), y.Counter()))
 	return n
 }
 

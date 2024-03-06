@@ -10,20 +10,13 @@ import (
 	"cmd/internal/obj"
 	"cmd/internal/src"
 	"go/constant"
-
-//	"runtime/debug"
-//	"os"
 )
 
-func max(a, b, c int64) int64 {
-	res := a
-	if res < b {
-		res = b
+func max(a, b int64) int64 {
+	if a < b {
+		return b
 	}
-	if res < c {
-		return c
-	}
-	return res
+	return a
 }
 
 // A Decl is a declaration of a const, type, or var. (A declared func is a Func.)
@@ -82,7 +75,7 @@ type AssignListStmt struct {
 }
 
 // NOTE: in some cases we can not set counter from lhs and rhs,
-//	 so counter for ListStmt should be set manually
+//       so counter for ListStmt should be set manually
 // TODO: may be set counter as parameter?
 func NewAssignListStmt(pos src.XPos, op Op, lhs, rhs []Node) *AssignListStmt {
 	n := &AssignListStmt{}
@@ -125,7 +118,7 @@ func NewAssignStmt(pos src.XPos, x, y Node) *AssignStmt {
 //if bbb && pos.Line() == 26 {
 //	debug.PrintStack()
 //}
-	n.SetCounter(max(xC, yC, 0))
+	n.SetCounter(max(xC, yC))
 	n.pos = pos
 	n.op = OAS
 	return n
@@ -160,7 +153,7 @@ func NewAssignOpStmt(pos src.XPos, asOp Op, x, y Node) *AssignOpStmt {
 	if y != nil {
 		yC = y.Counter()
 	}
-	n.SetCounter(max(xC, yC, 0))
+	n.SetCounter(max(xC, yC))
 	return n
 }
 
@@ -181,7 +174,7 @@ func NewBlockStmt(pos src.XPos, counter int64, list []Node) *BlockStmt {
 		}
 	}
 	if len(list) > 0 {
-		n.SetCounter(max(list[0].Counter(), 0, 0))
+		n.SetCounter(max(list[0].Counter(), 0))
 	}
 	n.op = OBLOCK
 	n.List = list
@@ -204,7 +197,7 @@ func NewBranchStmt(pos src.XPos, op Op, label *types.Sym) *BranchStmt {
 	n := &BranchStmt{Label: label}
 	n.pos = pos
 	n.op = op
-	// TODO counter?
+	// TODO: counter?
 	return n
 }
 
@@ -243,7 +236,7 @@ func NewCaseStmt(pos src.XPos, list, body []Node) *CaseClause {
 	n.pos = pos
 	n.op = OCASE
 	if len(body) > 0 {
-		n.SetCounter(max(body[0].Counter(), 0, 0))
+		n.SetCounter(max(body[0].Counter(), 0))
 	}
 	return n
 }
@@ -259,7 +252,7 @@ func NewCommStmt(pos src.XPos, comm Node, body []Node) *CommClause {
 	n.pos = pos
 	n.op = OCASE
 	if len(body) > 0 {
-		n.SetCounter(max(body[0].Counter(), 0, 0))
+		n.SetCounter(max(body[0].Counter(), 0))
 	}
 	return n
 }
@@ -281,7 +274,7 @@ func NewForStmt(pos src.XPos, init Node, cond, post Node, body []Node, distinctV
 	if init != nil {
 		n.init = []Node{init}
 	}
-	n.SetCounter(1) // TODO this is incorrect
+	n.SetCounter(1) // TODO we should set counter manualy outside, or add a function parameter
 	n.Body = body
 	n.DistinctVars = distinctVars
 	return n
@@ -308,7 +301,7 @@ func NewGoDeferStmt(pos src.XPos, op Op, call Node) *GoDeferStmt {
 		panic("NewGoDeferStmt " + op.String())
 	}
 	if call != nil {
-		n.SetCounter(max(call.Counter(), 0, 0))
+		n.SetCounter(max(call.Counter(), 0))
 	}
 	return n
 }
@@ -338,7 +331,7 @@ func NewIfStmt(pos src.XPos, cond Node, body, els []Node) *IfStmt {
 	if len(els) > 0 {
 		eC = els[0].Counter()
 	}
-	n.SetCounter(max(bC + eC, cC, 0))
+	n.SetCounter(max(bC + eC, cC))
 	return n
 }
 
@@ -530,7 +523,7 @@ func NewSendStmt(pos src.XPos, ch, value Node) *SendStmt {
 	n := &SendStmt{Chan: ch, Value: value}
 	n.pos = pos
 	n.op = OSEND
-	n.SetCounter(max(ch.Counter(), value.Counter(), 0))
+	n.SetCounter(max(ch.Counter(), value.Counter()))
 	return n
 }
 

@@ -1646,7 +1646,7 @@ func (r *reader) stmt1(tag codeStmt, out *ir.Nodes) ir.Node {
 		}
 
 		n := ir.NewAssignListStmt(pos, ir.OAS2, lhs, rhs)
-		// TODO which counter?
+		// TODO: counter?
 		n.Def = r.initDefn(n, names)
 		return n
 
@@ -2883,11 +2883,11 @@ func (r *reader) multiExpr() []ir.Node {
 
 		results := make([]ir.Node, r.Len())
 		as := ir.NewAssignListStmt(pos, ir.OAS2, nil, []ir.Node{expr})
-		// TODO which counter?
+		// TODO: counter?
 		as.Def = true
 		for i := range results {
 			tmp := r.temp(pos, r.typ())
-			as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp, 0)) // TODO fix counter
+			as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp, 0)) // TODO: counter?
 			as.Lhs.Append(tmp)
 
 			res := ir.Node(tmp)
@@ -3466,7 +3466,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			continue
 		}
 		// TODO(mdempsky): Use inlined position of name.Pos() instead?
-		as2init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, 0)) // TODO fix counter
+		as2init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, 0)) // TODO: counter?
 		name.Defn = as2
 	}
 	as2.SetInit(as2init)
@@ -3477,7 +3477,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 		// result variables now.
 		for _, name := range retvars {
 			// TODO(mdempsky): Use inlined position of name.Pos() instead?
-			init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, 0)) // TODO fix counter
+			init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, 0)) // TODO: counter?
 			ras := ir.NewAssignStmt(call.Pos(), name, nil)
 			init.Append(typecheck.Stmt(ras))
 		}

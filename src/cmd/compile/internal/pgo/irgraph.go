@@ -317,7 +317,7 @@ func backPropNodeListCounterRec(nodes ir.Nodes, depth int, watched map[ir.Node]b
 }
 
 // backPropNodeCounterRec implements the propagation of profile counters from
-// bottomn to top. The main goal of this step is to get the maximal counter
+// bottom to top. The main goal of this step is to get the maximal counter
 // value to each level of a tree and to make possible the top to down pass
 // returns the counter of the node and true if sub-tree have a return statement
 // NOTE keep it symmetrically to forwardPropNodeCounterRec
@@ -419,7 +419,7 @@ func forwardPropNodeListCounterRec(nodes ir.Nodes, depth int, watched map[ir.Nod
 }
 
 // forwardPropNodeCounterRec implements the propagation of profile counters from
-// top to bottomn. The main goal of this step is to make counters of the tree
+// top to bottom. The main goal of this step is to make counters of the tree
 // consistent
 // NOTE keep it symmetrically to backPropNodeCounterRec
 func forwardPropNodeCounterRec(n ir.Node, c int64, depth int, watched map[ir.Node]bool) {
@@ -625,7 +625,7 @@ func PropagateCounters(f *ir.Func) {
 // loadCounters loads counters to the nodes of AST from profile
 func loadCounters(p *profile.Profile) {
 	// Build a table functionName <-> ir.Func to get quick search
-	// beteween profile.Function and ir.Func
+	// between profile.Function and ir.Func
 	type FuncSamples struct {
 		Func *ir.Func
 		// This is the map line <-> Sample for quick search

@@ -88,6 +88,7 @@ func ParseOne(fs *flag.FlagSet, args []string) (f *flag.Flag, remainingArgs []st
 	failf := func(format string, a ...any) (*flag.Flag, []string, error) {
 		return f, args, fmt.Errorf(format, a...)
 	}
+
 	if fv, ok := f.Value.(boolFlag); ok && fv.IsBoolFlag() { // special case: doesn't need an arg
 		if hasValue {
 			if err := fs.Set(name, value); err != nil {
