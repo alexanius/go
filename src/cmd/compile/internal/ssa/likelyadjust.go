@@ -5,6 +5,7 @@
 package ssa
 
 import (
+	"cmd/compile/internal/base"
 	"fmt"
 )
 
@@ -167,7 +168,13 @@ func likelyadjust(f *Func) {
 				// Weak loop heuristic -- both source and at least one dest are in loops,
 				// and there is a difference in the destinations.
 				// TODO what is best arrangement for nested loops?
-				if l != nil && l0 != l1 {
+				if base.Flag.BbPgoProfile && b.Succs[0].b.Counter + b.Succs[1].b.Counter > 0 {
+					if b.Succs[0].b.Counter > b.Succs[1].b.Counter {
+						prediction = BranchLikely
+					} else {
+						prediction = BranchUnlikely
+					}
+				} else if l != nil && l0 != l1 {
 					noprediction := false
 					switch {
 					// prefer not to exit loops

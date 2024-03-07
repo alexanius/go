@@ -131,23 +131,6 @@ blockloop:
 			likely = b.Succs[1].b
 		}
 
-		if len(b.Succs) > 1 {
-			// NOTE: this is just an experiment to show that profile works
-			//	 in the final version this code will be replaced with
-			//       a fair profile-guided algorithm
-
-			e0 := b.Succs[0].b.Counter
-			e1 := b.Succs[1].b.Counter
-			if e0+e1 != 0 {
-				// We have non-zero counters
-				if e0 < e1 {
-					likely = b.Succs[1].b
-				} else if e1 < e0 {
-					likely = b.Succs[0].b
-				}
-			}
-		}
-
 		if likely != nil && !scheduled[likely.ID] {
 			bid = likely.ID
 			continue
