@@ -187,7 +187,7 @@ func unified(m posMap, noders []*noder) {
 	r := localPkgReader.newReader(pkgbits.RelocMeta, pkgbits.PrivateRootIdx, pkgbits.SyncPrivate)
 	r.pkgInit(types.LocalPkg, target)
 
-	readBodies(target, false)
+	readBodies(target, false, nil)
 
 	// Check that nothing snuck past typechecking.
 	for _, fn := range target.Funcs {
@@ -221,7 +221,7 @@ func unified(m posMap, noders []*noder) {
 // If duringInlining is true, then the inline.InlineDecls is called as
 // necessary on instantiations of imported generic functions, so their
 // inlining costs can be computed.
-func readBodies(target *ir.Package, duringInlining bool) {
+func readBodies(target *ir.Package, duringInlining bool, prof *pgo.Profile) {
 	var inlDecls []*ir.Func
 
 	// Don't use range--bodyIdx can add closures to todoBodies.

@@ -140,6 +140,9 @@ type Profile struct {
 	// WeightedCG represents the IRGraph built from profile, which we will
 	// update as part of inlining.
 	WeightedCG *IRGraph
+
+	// Loaded raw profile data
+	Prof *FuncSampleTable
 }
 
 var wantHdr = "GO PREPROFILE V1\n"
@@ -234,24 +237,17 @@ func processProto(r io.Reader) (*Profile, error) {
 	// Create package-level call graph with weights from profile and IR.
 	wg := createIRGraph(namedEdgeMap)
 
+	var fs *FuncSampleTable
 	if base.Flag.BbPgoProfile {
-		// If option is enabled - load basic block counters from the profile
-
-		// Load counters from file
-		loadCounters(p)
-
-		// Propagate counters in AST
-		ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
-			for _, f := range list {
-				PropagateCounters(f)
-			}
-		})
+		// Load and propagate counters for each AST node
+		fs = LoadCounters(p, nil)
 	}
 
 	return &Profile{
 		TotalWeight:  totalWeight,
 		NamedEdgeMap: namedEdgeMap,
 		WeightedCG:   wg,
+		Prof:         fs,
 	}, nil
 }
 

@@ -216,6 +216,7 @@ dt.ast-prog-src {
     padding: 0;
     margin: 0;
     float: left;
+    width: 30%
 }
 
 dl.ssa-gen {

@@ -25,6 +25,7 @@ type node struct {
 	// commented out for now since not yet used
 	// doc  *Comment // nil means no comment(s) attached
 	pos Pos
+	c int64
 }
 
 func (n *node) Pos() Pos       { return n.pos }

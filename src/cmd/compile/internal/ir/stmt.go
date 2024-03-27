@@ -412,11 +412,11 @@ type InlineMarkStmt struct {
 	Index int64
 }
 
-func NewInlineMarkStmt(pos src.XPos, index int64) *InlineMarkStmt {
+func NewInlineMarkStmt(pos src.XPos, index int64, c int64) *InlineMarkStmt {
 	n := &InlineMarkStmt{Index: index}
 	n.pos = pos
 	n.op = OINLMARK
-	// TODO: counter?
+	n.SetCounter(c)
 	return n
 }
 
