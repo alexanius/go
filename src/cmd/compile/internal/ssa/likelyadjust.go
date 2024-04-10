@@ -204,10 +204,12 @@ func likelyadjust(f *Func) {
 						len(b.Succs[0].b.Preds) == 1 &&
 						len(b.Succs[1].b.Preds) == 1 {
 
-						if b.Succs[0].b.Counter == 0 && len(b.Succs[0].b.Succs) == 1 {
+						if b.Succs[0].b.Counter == 0 && len(b.Succs[0].b.Succs) == 1 &&
+							len(b.Succs[0].b.Succs[0].b.Preds) == 1 {
 							b.Succs[0].b.Counter = b.Succs[0].b.Succs[0].b.Counter
 						}
-						if b.Succs[1].b.Counter == 0 && len(b.Succs[1].b.Succs) == 1 {
+						if b.Succs[1].b.Counter == 0 && len(b.Succs[1].b.Succs) == 1 &&
+							len(b.Succs[1].b.Succs[0].b.Preds) == 1 {
 							b.Succs[1].b.Counter = b.Succs[1].b.Succs[0].b.Counter
 						}
 

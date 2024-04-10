@@ -106,7 +106,7 @@ func DevirtualizeAndInlineFunc(fn *ir.Func, profile *pgoir.Profile) {
 			return nil
 		}
 
-		fixpoint(fn, match, edit)
+		fixpoint(fn, match, edit, profile)
 	})
 }
 
@@ -120,7 +120,7 @@ func DevirtualizeAndInlineFunc(fn *ir.Func, profile *pgoir.Profile) {
 //
 // After an iteration where all edit calls return nil, fixpoint
 // returns.
-func fixpoint(fn *ir.Func, match func(ir.Node) bool, edit func(ir.Node) ir.Node) {
+func fixpoint(fn *ir.Func, match func(ir.Node) bool, edit func(ir.Node) ir.Node, profile *pgoir.Profile) {
 	// Consider the expression "f(g())". We want to be able to replace
 	// "g()" in-place with its inlined representation. But if we first
 	// replace "f(...)" with its inlined representation, then "g()" will
@@ -166,6 +166,18 @@ func fixpoint(fn *ir.Func, match func(ir.Node) bool, edit func(ir.Node) ir.Node)
 				paren.X = new
 				ir.EditChildren(new, mark) // mark may append to parens
 				done = false
+
+			if base.Flag.BbPgoProfile && profile != nil {
+				// The inline loads function with zero profile. We need
+				// to add counters from the profile we read before
+				call, ok := paren.X.(*ir.CallExpr)
+				if ok && call.Fun.Op() == ir.ONAME {
+//					nn := ir.LinkFuncName(fn)
+					pgoir.SetCounters(profile.Prof, fn, call.Fun.(*ir.Name).Func)
+//					name := types.RuntimeSymName(call.Fun.(*ir.Name).Sym())//ir.LinkFuncName(fn)
+//					pgoir.SetCounters(prof.Prof, r.curfn, &name)
+				}
+			}
 			}
 		}
 

@@ -1078,6 +1078,12 @@ func mkinlcall(callerfn *ir.Func, n *ir.CallExpr, fn *ir.Func, bigCaller bool, p
 		base.FatalfAt(n.Pos(), "inlining call to %v failed", fn)
 	}
 
+/*	if base.Flag.BbPgoProfile && profile != nil && n.Fun.Op() == ir.ONAME {
+		// Correct the counters after inline
+		nn := ir.LinkFuncName(fn)
+		pgoir.SetCounters(profile.Prof, callerfn, &nn)
+	}*/
+
 	if base.Flag.LowerM > 2 {
 		fmt.Printf("%v: After inlining %+v\n\n", ir.Line(res), res)
 	}

@@ -3372,6 +3372,13 @@ var inlgen = 0
 // unifiedInlineCall implements inline.NewInline by re-reading the function
 // body from its Unified IR export data.
 func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlIndex int, prof *pgoir.Profile) *ir.InlinedCallExpr {
+
+/*	name := ""
+	if call.Fun.Op() == ir.ONAME {
+//		name = types.RuntimeSymName(call.Fun.(*ir.Name).Sym())
+		name = ir.LinkFuncName(call.Fun.(*ir.Name).Func)
+	}*/
+
 	pri, ok := bodyReaderFor(fn)
 	if !ok {
 		base.FatalfAt(call.Pos(), "cannot inline call to %v: missing inline body", fn)
@@ -3480,12 +3487,6 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			r.curfn.Body = r.stmts()
 			r.curfn.Endlineno = r.pos()
 
-			if base.Flag.BbPgoProfile && prof != nil && call.Counter() != 0 {
-				// The inline loads function with zero profile. We need
-				// to add counters from the profile we read before
-				name := ir.LinkFuncName(fn)
-				pgoir.SetCounters(prof.Prof, r.curfn, &name)
-			}
 		}
 
 		// TODO(mdempsky): This shouldn't be necessary. Inlining might
@@ -3532,6 +3533,16 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 
 	// Inlining shouldn't add any functions to todoBodies.
 	assert(len(todoBodies) == 0)
+//			if base.Flag.BbPgoProfile && prof != nil /*&& r.curfn.GetCounter2(call) != 0*/ {
+				// The inline loads function with zero profile. We need
+				// to add counters from the profile we read before
+//				if call.Fun.Op() == ir.ONAME {
+////					nn := ir.LinkFuncName(fn)
+//					pgoir.SetCounters(prof.Prof, /*r.curfn*/callerfn, fn)
+////					name := types.RuntimeSymName(call.Fun.(*ir.Name).Sym())//ir.LinkFuncName(fn)
+////					pgoir.SetCounters(prof.Prof, r.curfn, &name)
+//				}
+//			}
 
 	return res
 }

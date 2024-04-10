@@ -4,6 +4,10 @@
 
 package ir
 
+//import (
+//   "runtime/debug"
+//)
+
 import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/types"
@@ -14,6 +18,11 @@ import (
 	"strings"
 	"unicode/utf8"
 )
+
+//type IDX = string
+//type IDX = src.XPos
+//type IDX = src.Pos
+type IDX = Node
 
 // A Func corresponds to a single function in a Go program
 // (and vice versa: each function is denoted by exactly one *Func).
@@ -138,6 +147,8 @@ type Func struct {
 	// WasmImport is used by the //go:wasmimport directive to store info about
 	// a WebAssembly function import.
 	WasmImport *WasmImport
+
+	Counters map[IDX]int64
 }
 
 // WasmImport stores metadata associated with the //go:wasmimport pragma.
@@ -165,10 +176,42 @@ func NewFunc(fpos, npos src.XPos, sym *types.Sym, typ *types.Type) *Func {
 	// pass may override this.
 	fn.ABI = obj.ABIInternal
 	fn.SetTypecheck(1)
+	fn.Counters = make(map[IDX]int64)
 
 	name.Func = fn
 
 	return fn
+}
+func (f *Func) SetCounter2(n Node, c int64) { 
+	op := n.Op()
+	if op == ONAME || op == OLITERAL {
+		return
+	}
+
+	pos := n
+//	pos := fmt.Sprintf("%s:%d", op.String(), n.Pos().Line()) ///*n */ /*base.Ctxt.InnermostPos*/(n.Pos())
+
+/*fmt.Println(LinkFuncName(f), pos, c)
+	if pos == "SUB:106" || pos == "SUB:96" {
+		debug.PrintStack()
+	}*/
+
+	cc, ok := f.Counters[pos]
+	if !ok || (ok && cc == 0) {
+		f.Counters[pos] = c 
+	}
+}
+
+func (f *Func) GetCounter2(n Node) int64 { 
+	op := n.Op()
+	if op == ONAME || op == OLITERAL {
+		return 0
+	}
+
+	pos := n
+//	pos := fmt.Sprintf("%s:%d", op.String(), n.Pos().Line()) ///*n */ /*base.Ctxt.InnermostPos*/(n.Pos())
+	c, _ := f.Counters[pos]
+	return c
 }
 
 func (f *Func) isStmt() {}

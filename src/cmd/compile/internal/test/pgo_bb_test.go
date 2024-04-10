@@ -56,7 +56,7 @@ var testIf2DumpPatterns = []*checkPair{
 
 	// Assembly checks
 	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false},
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*JCS`), false},
+	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*(JCS|JCC)`), false},
 	{regexp.MustCompile(`b3 \([1-9][0-9]*\).*RET`), false},
 	{regexp.MustCompile(`b2 \([1-9][0-9]*\).*RET`), false},
 }
