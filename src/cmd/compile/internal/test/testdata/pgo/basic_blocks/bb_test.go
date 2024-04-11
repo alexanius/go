@@ -89,7 +89,7 @@ func testFor3(v bool, a, b []int) int {
 }
 
 // This function should be inlined
-func funcToInline(v bool, a []int, i int) int {
+func funcToInline1(v bool, a []int, i int) int {
 	if v {
 		return a[i] * int(math.Sqrt(float64(i)))
 	} else {
@@ -98,12 +98,36 @@ func funcToInline(v bool, a []int, i int) int {
 	return 0
 }
 
+// This function should be inlined
+func funcToInline2(v bool, a []int, i int) int {
+	return 0
+}
+
 // Test for counters of inlined function
 //go:noinline
 func testInline1(v bool, a []int) int {
 	s := a[len(a)-1]
 	for i := range a {
-		s += funcToInline(v, a, i)
+		s += funcToInline1(v, a, i)
+	}
+
+	return s
+
+}
+
+// This test inlines two same functions. One of them should have zero counter
+//go:noinline
+func testInline2(v bool, a []int) int {
+	s := a[len(a)-1]
+	for i := range a {
+		if v {
+			s += funcToInline1(v, a, i)
+			s += a[i] / int(a[i] * 2 + 1)
+			s += funcToInline2(v, a, i)
+		} else {
+			// Always zero counter
+			s -= funcToInline1(v, a, i)
+		}
 	}
 
 	return s
@@ -133,5 +157,6 @@ func BenchmarkBBProfInline(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		a := make([]int, size)
 		Acc += testInline1(true, a)
+		Acc += testInline2(true, a)
 	}
 }

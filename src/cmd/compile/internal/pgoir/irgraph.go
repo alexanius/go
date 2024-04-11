@@ -157,7 +157,7 @@ func New(profileFile string) (*Profile, error) {
 	var fs *FuncSampleTable
 	if base.Flag.BbPgoProfile {
 		// Load and propagate counters for each AST node
-		fs = LoadCounters(pgoProf.PProf, nil)
+		fs = LoadCounters(pgoProf.PProf)
 	}
 
 	return &Profile{

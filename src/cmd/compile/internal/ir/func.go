@@ -138,7 +138,57 @@ type Func struct {
 	// WasmImport is used by the //go:wasmimport directive to store info about
 	// a WebAssembly function import.
 	WasmImport *WasmImport
+
+	ProfTable NodeProfTable
 }
+
+
+// The type of a counter in node
+type Counter = int64
+
+// The type of index in the function counter table
+type T_index = string//uint//src.XPos/*ir.*///Node
+
+// The type of a table with 
+type NodeProfTable = map[T_index]Counter
+
+// shouldSetCounter returns true if this node type should have a counter
+func ShouldSetCounter(n Node) bool {
+	op := n.Op()
+	return op != ONAME && op != OLITERAL
+}
+
+// Set the counter c to the node n in the function fn
+func SetCounter2(fn *Func, n Node, c Counter) {
+	if !ShouldSetCounter(n) {
+		return
+	}
+
+	idx := fmt.Sprintf("%d:%d", n.Pos().FileIndex(), n.Pos().Line())
+	t := fn.ProfTable
+	t[idx] = c
+}
+
+// Get the counter c to the node n in the function fn
+func GetCounter2(fn */*ir.*/Func, n /*ir.*/Node) Counter {
+	if !ShouldSetCounter(n) {
+		return 0
+	}
+
+	idx := fmt.Sprintf("%d:%d", n.Pos().FileIndex(), n.Pos().Line())
+//	idx := n.Pos().Line()
+	t := fn.ProfTable
+	return t[idx]
+}
+
+// Get the counter c to the node n in the function fn
+func GetCounterByPos2(fn *Func, p src.XPos) Counter {
+	idx := fmt.Sprintf("%d:%d", p.FileIndex(), p.Line())
+//	idx := p.Line()
+	t := fn.ProfTable
+	return t[idx]
+}
+
 
 // WasmImport stores metadata associated with the //go:wasmimport pragma.
 type WasmImport struct {

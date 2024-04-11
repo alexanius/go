@@ -12,6 +12,7 @@ import (
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/liveness"
 	"cmd/compile/internal/objw"
 	"cmd/compile/internal/ssagen"
@@ -104,6 +105,7 @@ func prepareFunc(fn *ir.Func) {
 	// Calculate parameter offsets.
 	types.CalcSize(fn.Type())
 
+				pgoir.SSSS(fn) // NOCOMMIT
 	ir.CurFunc = fn
 	walk.Walk(fn)
 	ir.CurFunc = nil // enforce no further uses of CurFunc

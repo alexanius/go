@@ -1041,11 +1041,7 @@ func (b *Block) HTML() string {
 	// that value IDs get recycled and that some values
 	// are transmuted into other values.
 	s := html.EscapeString(b.String())
-	if base.Flag.BbPgoProfile {
-		return fmt.Sprintf("<span class=\"%s ssa-block\">%s (%d)</span>", s, s, b.Counter)
-	} else {
-		return fmt.Sprintf("<span class=\"%s ssa-block\">%s</span>", s, s)
-	}
+	return fmt.Sprintf("<span class=\"%s ssa-block\">%s</span>", s, s)
 }
 
 func (b *Block) LongHTML() string {

@@ -72,6 +72,10 @@ type Block struct {
 	valstorage  [9]*Value
 }
 
+func (b *Block) GetCounter() Counter {
+	return GetCounter3(b.Func, b)
+}
+
 // Edge represents a CFG edge.
 // Example edges for b branching to either c or d.
 // (c and d have other predecessors.)
@@ -121,7 +125,7 @@ type BlockKind int16
 // short form print
 func (b *Block) String() string {
 	if base.Flag.BbPgoProfile {
-		return fmt.Sprintf("b%d (%d)", b.ID, b.Counter)
+		return fmt.Sprintf("b%d (%d)", b.ID, b.GetCounter())
 	} else {
 		return fmt.Sprintf("b%d", b.ID)
 	}

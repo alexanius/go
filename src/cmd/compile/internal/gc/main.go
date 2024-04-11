@@ -231,6 +231,10 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	base.Timer.Start("fe", "devirtualize-and-inline")
 	interleaved.DevirtualizeAndInlinePackage(typecheck.Target, profile)
 
+//	for _, fn := range typecheck.Target.Funcs {
+//		pgoir.SSSS(fn)
+//	}
+
 	noder.MakeWrappers(typecheck.Target) // must happen after inlining
 
 	// Get variable capture right in for loops.
@@ -272,6 +276,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 	reflectdata.WriteBasicTypes()
 
+
 	// Compile top-level declarations.
 	//
 	// There are cyclic dependencies between all of these phases, so we
@@ -295,6 +300,9 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 		if nextFunc < len(typecheck.Target.Funcs) {
 			enqueueFunc(typecheck.Target.Funcs[nextFunc])
+//	for _, fn := range typecheck.Target.Funcs {
+//		pgoir.SSSS(typecheck.Target.Funcs[nextFunc])
+//	}
 			nextFunc++
 			continue
 		}

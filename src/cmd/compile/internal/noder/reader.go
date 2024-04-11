@@ -3484,7 +3484,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 				// The inline loads function with zero profile. We need
 				// to add counters from the profile we read before
 				name := ir.LinkFuncName(fn)
-				pgoir.SetCounters(prof.Prof, r.curfn, &name)
+				pgoir.SetCounters(prof.Prof, r.curfn, &name, "reader")
 			}
 		}
 
