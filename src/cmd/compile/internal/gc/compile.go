@@ -12,9 +12,9 @@ import (
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
-	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/liveness"
 	"cmd/compile/internal/objw"
+	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/ssagen"
 	"cmd/compile/internal/staticinit"
 	"cmd/compile/internal/types"
@@ -105,7 +105,7 @@ func prepareFunc(fn *ir.Func) {
 	// Calculate parameter offsets.
 	types.CalcSize(fn.Type())
 
-				pgoir.SSSS(fn) // NOCOMMIT
+
 	ir.CurFunc = fn
 	walk.Walk(fn)
 	ir.CurFunc = nil // enforce no further uses of CurFunc
@@ -114,7 +114,7 @@ func prepareFunc(fn *ir.Func) {
 // compileFunctions compiles all functions in compilequeue.
 // It fans out nBackendWorkers to do the work
 // and waits for them to complete.
-func compileFunctions() {
+func compileFunctions(profile *pgoir.Profile) {
 	if race.Enabled {
 		// Randomize compilation order to try to shake out races.
 		tmp := make([]*ir.Func, len(compilequeue))
@@ -181,6 +181,11 @@ func compileFunctions() {
 		for _, fn := range fns {
 			fn := fn
 			queue(func(worker int) {
+
+				if base.Flag.BbPgoProfile && profile != nil {
+					pgoir.CorrectProfileAfterInline(profile.Prof, fn)
+				}
+
 				ssagen.Compile(fn, worker)
 				compile(fn.Closures)
 				wg.Done()

@@ -3480,12 +3480,12 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			r.curfn.Body = r.stmts()
 			r.curfn.Endlineno = r.pos()
 
-			if base.Flag.BbPgoProfile && prof != nil && call.Counter() != 0 {
+//			if base.Flag.BbPgoProfile && prof != nil && call.Counter() != 0 {
 				// The inline loads function with zero profile. We need
 				// to add counters from the profile we read before
-				name := ir.LinkFuncName(fn)
-				pgoir.SetCounters(prof.Prof, r.curfn, &name, "reader")
-			}
+//				name := ir.LinkFuncName(fn)
+//				pgoir.SetCounters(prof.Prof, r.curfn, &name, "reader")
+//			}
 		}
 
 		// TODO(mdempsky): This shouldn't be necessary. Inlining might

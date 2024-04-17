@@ -231,10 +231,6 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	base.Timer.Start("fe", "devirtualize-and-inline")
 	interleaved.DevirtualizeAndInlinePackage(typecheck.Target, profile)
 
-//	for _, fn := range typecheck.Target.Funcs {
-//		pgoir.SSSS(fn)
-//	}
-
 	noder.MakeWrappers(typecheck.Target) // must happen after inlining
 
 	// Get variable capture right in for loops.
@@ -300,18 +296,27 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 		if nextFunc < len(typecheck.Target.Funcs) {
 			enqueueFunc(typecheck.Target.Funcs[nextFunc])
-//	for _, fn := range typecheck.Target.Funcs {
-//		pgoir.SSSS(typecheck.Target.Funcs[nextFunc])
-//	}
+
 			nextFunc++
 			continue
 		}
 
+/*	if base.Flag.BbPgoProfile && profile != nil {
+			pgoir.CorrectProfileAfterInline(profile.Prof, typecheck.Target.Funcs[nextFunc])
+//		for _, fn := range typecheck.Target.Funcs {
+//			pgoir.CorrectProfileAfterInline(profile.Prof, fn)
+//		}
+	}*/
+//	for _, fn := range typecheck.Target.Funcs {
+//		if base.Flag.BbPgoProfile && profile != nil {
+//			pgoir.CorrectProfileAfterInline(profile.Prof, fn)
+//		}
+//	}
 		// The SSA backend supports using multiple goroutines, so keep it
 		// as late as possible to maximize how much work we can batch and
 		// process concurrently.
 		if len(compilequeue) != 0 {
-			compileFunctions()
+			compileFunctions(profile)
 			continue
 		}
 

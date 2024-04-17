@@ -155,7 +155,7 @@ type NodeProfTable = map[T_index]Counter
 // shouldSetCounter returns true if this node type should have a counter
 func ShouldSetCounter(n Node) bool {
 	op := n.Op()
-	return op != ONAME && op != OLITERAL
+	return op != ONAME && op != OLITERAL //&& op != OBLOCK
 }
 
 // Set the counter c to the node n in the function fn
@@ -166,6 +166,10 @@ func SetCounter2(fn *Func, n Node, c Counter) {
 
 	idx := fmt.Sprintf("%d:%d", n.Pos().FileIndex(), n.Pos().Line())
 	t := fn.ProfTable
+	if t == nil {
+		// TODO why
+		return
+	}
 	t[idx] = c
 }
 

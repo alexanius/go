@@ -294,10 +294,6 @@ func (s *state) emitOpenDeferInfo() {
 // worker indicates which of the backend workers is doing the processing.
 func buildssa(fn *ir.Func, worker int) *ssa.Func {
 	name := ir.FuncName(fn)
-//	if base.Flag.BbPgoProfile {
-//		pgoir.SSSS(fn)
-//		pgoir.PropagateCounters(fn, "buildssa")
-//	}
 
 	abiSelf := abiForFunc(fn, ssaConfig.ABI0, ssaConfig.ABI1)
 
@@ -579,6 +575,10 @@ func buildssa(fn *ir.Func, worker int) *ssa.Func {
 
 	s.insertPhis()
 
+	if base.Flag.BbPgoProfile {
+		pgoir.SetBBCounters(fn, s.f)
+	}
+
 	// Main call to ssa package to compile function
 	ssa.Compile(s.f)
 
@@ -601,10 +601,6 @@ func buildssa(fn *ir.Func, worker int) *ssa.Func {
 			reg := ssa.ObjRegForAbiReg(p.Registers[i], s.f.Config)
 			s.f.RegArgs = append(s.f.RegArgs, ssa.Spill{Reg: reg, Offset: fo + o, Type: t})
 		}
-	}
-
-	if base.Flag.BbPgoProfile {
-		pgoir.SetBBCounters(fn, s.f)
 	}
 	return s.f
 }

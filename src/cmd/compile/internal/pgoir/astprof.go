@@ -5,6 +5,7 @@
 package pgoir
 
 import (
+	"cmd/compile/internal/base"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/typecheck"
@@ -222,7 +223,6 @@ func backPropNodeListCounterRec(f *ir.Func, nodes ir.Nodes, depth int, watched m
 					fmt.Println("back_prop (list): ", printOp(n), " old: ", ir.GetCounter2(f, n), " new: ", c)
 				}
 				ir.SetCounter2(f, n, c)
-//				n.SetCounter(c)
 			}
 		}
 	}
@@ -389,7 +389,6 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 			fmt.Println("forward_prop: ", printOp(n), " old: ", ir.GetCounter2(f, n), " new: ", c)
 		}
 		ir.SetCounter2(f, n, c)
-//		n.SetCounter(c)
 	}
 
 	if n.Op() == ir.OIF {
@@ -499,6 +498,108 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 	return
 }
 
+//----------------------------- Inline correction functions
+
+func setCounterToNodeRec(funcTable *FuncSampleTable, fs *FuncSamples, f *ir.Func, n ir.Node, depth int, watched map[ir.Node]bool, inlCount ir.Counter) {
+	if watched[n] {
+		return
+	}
+	watched[n] = true
+
+	if fs != nil && inlCount != 0 {
+		sample, ok := fs.Sample[int64(n.Pos().Line())]
+		if ok {
+			ir.SetCounter2(f, n, sample[0].Value[1])
+
+			if bbDebugPrint {
+				fmt.Println("inline_correction init: ", printOp(n), " new: ", sample[0].Value[1])
+			}
+		}
+	}
+
+	v := reflect.ValueOf(n).Elem()
+	t := reflect.TypeOf(n).Elem()
+	nf := t.NumField()
+	for i := 0; i < nf; i++ {
+		vf := v.Field(i)
+		tf := t.Field(i)
+
+		if tf.PkgPath != "" {
+			// skip unexported field - Interface will fail
+			continue
+		}
+		switch tf.Type.Kind() {
+		case reflect.Interface, reflect.Ptr, reflect.Slice:
+			if vf.IsNil() {
+				continue
+			}
+		}
+
+		switch val := vf.Interface().(type) {
+		case ir.Node:
+			setCounterToNodeRec(funcTable, fs, f, val, depth+1, watched, inlCount)
+		case ir.Nodes:
+			inlineCorrectionNodeListCounterRec(funcTable, fs, f, val, depth+1, watched, inlCount)
+		}
+	}
+}
+
+func inlineCorrectionNodeListCounterRec(funcTable *FuncSampleTable, fs *FuncSamples, f *ir.Func, nodes ir.Nodes, depth int, watched map[ir.Node]bool, inlCount ir.Counter) {
+	if nodes == nil {
+		return
+	}
+
+	startFuncTable := fs
+	curFuncTable := fs
+	hadInl := false
+	oldCounter := inlCount
+
+	for _, n := range nodes {
+		if n.Op() == ir.OINLMARK {
+			n := n.(*ir.InlineMarkStmt)
+			fSym := base.Ctxt.InlTree.InlinedFunction(int(n.Index))
+			name := fSym.String()
+			curFuncTable = (*funcTable)[name]
+			inlCount = ir.GetCounter2(f, n)
+			hadInl = true
+
+			if bbDebugPrint {
+				fmt.Println("inline_correction: found INLMARK ", printOp(n), " for function: ", name, "with counter: ", inlCount)
+			}
+		}
+
+		setCounterToNodeRec(funcTable, curFuncTable, f, n, depth+1, watched, inlCount)
+
+		if n.Op() == ir.OLABEL && hadInl == true {
+			curFuncTable = startFuncTable
+			hadInl = false
+			inlCount = oldCounter
+		}
+	}
+}
+
+// CorrectProfileAfterInline parses function, set counters only to inlined nodes
+// and launches propagation of counters
+func CorrectProfileAfterInline(funcTable *FuncSampleTable, f *ir.Func) {
+
+	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
+	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
+		fmt.Printf("Start bbpgo debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
+		bbDebugPrint = true
+	}
+
+	watched := map[ir.Node]bool{}
+	inlineCorrectionNodeListCounterRec(funcTable, nil, f, f.Body, 0, watched, 0)
+
+	if bbDebugPrint {
+		fmt.Printf("Finish bbpgo debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
+	}
+
+	bbDebugPrint = false
+}
+
+//----------------------------- SSA correction functions
+
 // For the given counters on the AST we translate counters to the SSA
 func SetBBCounters(irFn *ir.Func, ssaFn *ssa.Func) {
 
@@ -516,6 +617,18 @@ func SetBBCounters(irFn *ir.Func, ssaFn *ssa.Func) {
 	getMaxCounter := func(bb *ssa.Block) ir.Counter {
 		maxC := ir.Counter(0)
 		for _, v := range bb.Values {
+			if v.Op == ssa.OpPanicBounds {
+				return 0
+			}
+			if v.Op == ssa.OpStaticCall || v.Op == ssa.OpStaticLECall {
+				s := v.Aux.(*ssa.AuxCall).Fn.String()
+				switch s {
+				case "runtime.racefuncenter", "runtime.racefuncexit",
+					"runtime.panicdivide", "runtime.panicwrap",
+					"runtime.panicshift":
+					return 0
+				}
+			}
 			c := ir.GetCounterByPos2(irFn, v.Pos)
 			if maxC < c {
 				maxC = c
