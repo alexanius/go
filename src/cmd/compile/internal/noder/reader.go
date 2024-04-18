@@ -19,7 +19,6 @@ import (
 	"cmd/compile/internal/inline/interleaved"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/objw"
-	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/staticinit"
 	"cmd/compile/internal/typecheck"
@@ -1263,7 +1262,7 @@ func (r *reader) funcBody(fn *ir.Func) {
 
 		body := r.stmts()
 		if body == nil {
-			body = []ir.Node{typecheck.Stmt(ir.NewBlockStmt(src.NoXPos, 0, nil))}
+			body = []ir.Node{typecheck.Stmt(ir.NewBlockStmt(src.NoXPos, nil))}
 		}
 		fn.Body = body
 		fn.Endlineno = r.pos()
@@ -1592,7 +1591,7 @@ func block(stmts []ir.Node) ir.Node {
 	case 1:
 		return stmts[0]
 	default:
-		return ir.NewBlockStmt(stmts[0].Pos(), stmts[0].Counter(), stmts)
+		return ir.NewBlockStmt(stmts[0].Pos(), stmts)
 	}
 }
 
@@ -1634,7 +1633,7 @@ func (r *reader) stmt1(tag codeStmt, out *ir.Nodes) ir.Node {
 		if len(rhs) == 0 {
 			for _, name := range names {
 				as := ir.NewAssignStmt(pos, name, nil)
-				as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, name, as.Counter()))
+				as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, name))
 				out.Append(typecheck.Stmt(as))
 			}
 			return nil
@@ -1888,7 +1887,7 @@ func (r *reader) selectStmt(label *types.Sym) ir.Node {
 				// Replace comm with `tmp := <-c`.
 				tmpAs := ir.NewAssignStmt(pos, tmp, recv)
 				tmpAs.Def = true
-				tmpAs.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp, tmpAs.Counter()))
+				tmpAs.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp))
 				comm = tmpAs
 
 				// Change original assignment to `i = tmp`, and prepend to body.
@@ -2038,7 +2037,7 @@ func (r *reader) initDefn(defn ir.InitNode, names []*ir.Name) bool {
 	init := make([]ir.Node, len(names))
 	for i, name := range names {
 		name.Defn = defn
-		init[i] = ir.NewDecl(name.Pos(), ir.ODCL, name, name.Counter())
+		init[i] = ir.NewDecl(name.Pos(), ir.ODCL, name)
 	}
 	defn.SetInit(init)
 	return true
@@ -2883,11 +2882,10 @@ func (r *reader) multiExpr() []ir.Node {
 
 		results := make([]ir.Node, r.Len())
 		as := ir.NewAssignListStmt(pos, ir.OAS2, nil, []ir.Node{expr})
-		// TODO: counter?
 		as.Def = true
 		for i := range results {
 			tmp := r.temp(pos, r.typ())
-			as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp, 0)) // TODO: counter?
+			as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, tmp))
 			as.Lhs.Append(tmp)
 
 			res := ir.Node(tmp)
@@ -2926,7 +2924,7 @@ func (r *reader) temp(pos src.XPos, typ *types.Type) *ir.Name {
 func (r *reader) tempCopy(pos src.XPos, expr ir.Node, init *ir.Nodes) *ir.Name {
 	tmp := r.temp(pos, expr.Type())
 
-	init.Append(typecheck.Stmt(ir.NewDecl(pos, ir.ODCL, tmp, expr.Counter())))
+	init.Append(typecheck.Stmt(ir.NewDecl(pos, ir.ODCL, tmp)))
 
 	assign := ir.NewAssignStmt(pos, tmp, expr)
 	assign.Def = true
@@ -3245,7 +3243,6 @@ func (r *reader) pkgInitOrder(target *ir.Package) {
 			as = typecheck.Stmt(ir.NewAssignStmt(pos, lhs[0], rhs))
 		} else {
 			as = typecheck.Stmt(ir.NewAssignListStmt(pos, ir.OAS2, lhs, []ir.Node{rhs}))
-			// TODO which counter?
 		}
 
 		for _, v := range lhs {
@@ -3371,7 +3368,7 @@ var inlgen = 0
 
 // unifiedInlineCall implements inline.NewInline by re-reading the function
 // body from its Unified IR export data.
-func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlIndex int, prof *pgoir.Profile) *ir.InlinedCallExpr {
+func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.InlinedCallExpr {
 	pri, ok := bodyReaderFor(fn)
 	if !ok {
 		base.FatalfAt(call.Pos(), "cannot inline call to %v: missing inline body", fn)
@@ -3441,7 +3438,6 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 
 	// Create assignment to declare and initialize inlvars.
 	as2 := ir.NewAssignListStmt(call.Pos(), ir.OAS2, ir.ToNodes(inlvars), args)
-	// TODO which counter?
 	as2.Def = true
 	var as2init ir.Nodes
 	for _, name := range inlvars {
@@ -3449,7 +3445,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			continue
 		}
 		// TODO(mdempsky): Use inlined position of name.Pos() instead?
-		as2init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, call.Counter()))
+		as2init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name))
 		name.Defn = as2
 	}
 	as2.SetInit(as2init)
@@ -3460,7 +3456,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 		// result variables now.
 		for _, name := range retvars {
 			// TODO(mdempsky): Use inlined position of name.Pos() instead?
-			init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name, call.Counter()))
+			init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name))
 			ras := ir.NewAssignStmt(call.Pos(), name, nil)
 			init.Append(typecheck.Stmt(ras))
 		}
@@ -3471,7 +3467,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 	// to put a breakpoint. Not sure if that's really necessary or not
 	// (in which case it could go at the end of the function instead).
 	// Note issue 28603.
-	init.Append(ir.NewInlineMarkStmt(call.Pos().WithIsStmt(), int64(r.inlTreeIndex), call.Counter()))
+	init.Append(ir.NewInlineMarkStmt(call.Pos().WithIsStmt(), int64(r.inlTreeIndex)))
 
 	ir.WithFunc(r.curfn, func() {
 		if !r.syntheticBody(call.Pos()) {
@@ -3479,13 +3475,6 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 
 			r.curfn.Body = r.stmts()
 			r.curfn.Endlineno = r.pos()
-
-//			if base.Flag.BbPgoProfile && prof != nil && call.Counter() != 0 {
-				// The inline loads function with zero profile. We need
-				// to add counters from the profile we read before
-//				name := ir.LinkFuncName(fn)
-//				pgoir.SetCounters(prof.Prof, r.curfn, &name, "reader")
-//			}
 		}
 
 		// TODO(mdempsky): This shouldn't be necessary. Inlining might
@@ -3493,7 +3482,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 		// potentially be recursively inlined themselves; but we shouldn't
 		// need to read in the non-inlined bodies for the declarations
 		// themselves. But currently it's an easy fix to #50552.
-		readBodies(typecheck.Target, true, prof)
+		readBodies(typecheck.Target, true)
 
 		// Replace any "return" statements within the function body.
 		var edit func(ir.Node) ir.Node
@@ -3547,12 +3536,11 @@ func (r *reader) inlReturn(ret *ir.ReturnStmt, retvars []*ir.Name) *ir.BlockStmt
 		assert(len(retvars) == len(results))
 
 		as2 := ir.NewAssignListStmt(pos, ir.OAS2, ir.ToNodes(retvars), ret.Results)
-		as2.SetCounter(ret.Counter())
 
 		if r.delayResults {
 			for _, name := range retvars {
 				// TODO(mdempsky): Use inlined position of name.Pos() instead?
-				block.Append(ir.NewDecl(pos, ir.ODCL, name, ret.Counter()))
+				block.Append(ir.NewDecl(pos, ir.ODCL, name))
 				name.Defn = as2
 			}
 		}
@@ -3561,7 +3549,7 @@ func (r *reader) inlReturn(ret *ir.ReturnStmt, retvars []*ir.Name) *ir.BlockStmt
 	}
 
 	block.Append(ir.NewBranchStmt(pos, ir.OGOTO, r.retlabel))
-	return ir.NewBlockStmt(pos, r.inlCall.Counter(), block)
+	return ir.NewBlockStmt(pos, block)
 }
 
 // expandInline reads in an extra copy of IR to populate
@@ -3941,7 +3929,8 @@ func addTailCall(pos src.XPos, fn *ir.Func, recv ir.Node, method *types.Field) {
 		return
 	}
 
-	ret := ir.NewReturnStmt(pos, []ir.Node{call})
+	ret := ir.NewReturnStmt(pos, nil)
+	ret.Results = []ir.Node{call}
 	fn.Body.Append(ret)
 }
 

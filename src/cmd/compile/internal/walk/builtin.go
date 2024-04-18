@@ -144,7 +144,7 @@ func walkClear(n *ir.UnaryExpr) ir.Node {
 			return n
 		}
 		// If n == nil, we are clearing an array which takes zero memory, do nothing.
-		return ir.NewBlockStmt(n.Pos(), n.Counter(), nil)
+		return ir.NewBlockStmt(n.Pos(), nil)
 	case typ.IsMap():
 		return mapClear(n.X, reflectdata.TypePtrAt(n.X.Pos(), n.X.Type()))
 	}
@@ -680,7 +680,7 @@ func walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 	typecheck.Stmts(calls)
 	walkExprList(calls, init)
 
-	r := ir.NewBlockStmt(base.Pos, nn.Counter(), nil)
+	r := ir.NewBlockStmt(base.Pos, nil)
 	r.List = calls
 	return walkStmt(typecheck.Stmt(r))
 }
@@ -774,9 +774,7 @@ func walkUnsafeSlice(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 		fn := ir.NewFunc(n.Pos(), n.Pos(), math_MulUintptr, decl)
 
 		call := mkcall1(fn.Nname, fn.Type().ResultsTuple(), init, ir.NewInt(base.Pos, sliceType.Elem().Size()), typecheck.Conv(typecheck.Conv(len, lenType), types.Types[types.TUINTPTR]))
-		as := ir.NewAssignListStmt(base.Pos, ir.OAS2, []ir.Node{mem, overflow}, []ir.Node{call})
-		as.SetCounter(n.Counter())
-		appendWalkStmt(init, as)
+		appendWalkStmt(init, ir.NewAssignListStmt(base.Pos, ir.OAS2, []ir.Node{mem, overflow}, []ir.Node{call}))
 
 		// if overflow || mem > -uintptr(ptr) {
 		//     if ptr == nil {

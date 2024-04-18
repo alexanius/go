@@ -304,13 +304,9 @@ func (e *escape) copyExpr(pos src.XPos, expr ir.Node, init *ir.Nodes) *ir.Name {
 
 	tmp := typecheck.TempAt(pos, e.curfn, expr.Type())
 
-	d := ir.NewDecl(pos, ir.ODCL, tmp, expr.Counter())
-	d.SetCounter(expr.Counter())
-	as := ir.NewAssignStmt(pos, tmp, expr)
-	as.SetCounter(expr.Counter())
 	stmts := []ir.Node{
-		d,
-		as,
+		ir.NewDecl(pos, ir.ODCL, tmp),
+		ir.NewAssignStmt(pos, tmp, expr),
 	}
 	typecheck.Stmts(stmts)
 	init.Append(stmts...)

@@ -33,18 +33,6 @@ type FuncSamples struct {
 
 type FuncSampleTable map[string]*FuncSamples
 
-var pppp *FuncSampleTable
-
-func SSSS(pf *ir.Func) {
-	if pppp == nil {
-		return
-	}
-	if pf.ProfTable == nil {
-		return
-	}
-	SetCountersForFunc(pppp, pf, "ssss")
-}
-
 // LoadCounters loads counters to the nodes of AST from profile
 func LoadCounters(p *profile.Profile) *FuncSampleTable {
 	// Build a table functionName <-> ir.Func to get quick search
@@ -87,7 +75,6 @@ func LoadCounters(p *profile.Profile) *FuncSampleTable {
 	// Assign counters to the nodes and propagate it
 	SetCounters(&funcTable, nil, nil, "load_counters")
 
-	pppp = &funcTable
 	return &funcTable
 }
 

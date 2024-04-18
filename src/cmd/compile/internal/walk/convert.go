@@ -120,7 +120,6 @@ func walkConvInterface(n *ir.ConvExpr, init *ir.Nodes) ir.Node {
 
 	res := typecheck.TempAt(base.Pos, ir.CurFunc, toType)
 	as := ir.NewAssignListStmt(base.Pos, ir.OAS2DOTTYPE, []ir.Node{res, ir.BlankNode}, []ir.Node{rhs})
-	as.SetCounter(n.Counter())
 	init.Append(as)
 	return res
 }

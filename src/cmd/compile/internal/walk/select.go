@@ -130,7 +130,6 @@ func walkSelectCases(cases []*ir.CommClause) []ir.Node {
 			fn := chanfn("selectnbrecv", 2, ch.Type())
 			call := mkcall1(fn, fn.Type().ResultsTuple(), r.PtrInit(), elem, ch)
 			as := ir.NewAssignListStmt(r.Pos(), ir.OAS2, []ir.Node{cond, n.Lhs[1]}, []ir.Node{call})
-			as.SetCounter(n.Counter())
 			r.PtrInit().Append(typecheck.Stmt(as))
 		}
 
@@ -225,7 +224,6 @@ func walkSelectCases(cases []*ir.CommClause) []ir.Node {
 	chosen := typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TINT])
 	recvOK := typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TBOOL])
 	r := ir.NewAssignListStmt(base.Pos, ir.OAS2, nil, nil)
-	// TODO: counter?
 	r.Lhs = []ir.Node{chosen, recvOK}
 	fn := typecheck.LookupRuntime("selectgo")
 	var fnInit ir.Nodes
@@ -256,7 +254,7 @@ func walkSelectCases(cases []*ir.CommClause) []ir.Node {
 			cond = typecheck.DefaultLit(cond, nil)
 			r = ir.NewIfStmt(base.Pos, cond, list, nil)
 		} else {
-			r = ir.NewBlockStmt(base.Pos, 0, list)
+			r = ir.NewBlockStmt(base.Pos, list)
 		}
 
 		init = append(init, r)

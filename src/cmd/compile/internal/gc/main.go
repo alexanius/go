@@ -223,9 +223,6 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 			log.Fatalf("%s: PGO error: %v", base.Flag.PgoProfile, err)
 		}
 	}
-	for _, fn := range typecheck.Target.Funcs {
-		ir.CheckIR(fn)
-	}
 
 	// Interleaved devirtualization and inlining.
 	base.Timer.Start("fe", "devirtualize-and-inline")
@@ -272,7 +269,6 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 	reflectdata.WriteBasicTypes()
 
-
 	// Compile top-level declarations.
 	//
 	// There are cyclic dependencies between all of these phases, so we
@@ -296,22 +292,10 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 		if nextFunc < len(typecheck.Target.Funcs) {
 			enqueueFunc(typecheck.Target.Funcs[nextFunc])
-
 			nextFunc++
 			continue
 		}
 
-/*	if base.Flag.BbPgoProfile && profile != nil {
-			pgoir.CorrectProfileAfterInline(profile.Prof, typecheck.Target.Funcs[nextFunc])
-//		for _, fn := range typecheck.Target.Funcs {
-//			pgoir.CorrectProfileAfterInline(profile.Prof, fn)
-//		}
-	}*/
-//	for _, fn := range typecheck.Target.Funcs {
-//		if base.Flag.BbPgoProfile && profile != nil {
-//			pgoir.CorrectProfileAfterInline(profile.Prof, fn)
-//		}
-//	}
 		// The SSA backend supports using multiple goroutines, so keep it
 		// as late as possible to maximize how much work we can batch and
 		// process concurrently.

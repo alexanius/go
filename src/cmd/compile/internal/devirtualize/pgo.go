@@ -430,7 +430,6 @@ func copyInputs(curfn *ir.Func, pos src.XPos, recvOrFn ir.Node, args []ir.Node, 
 	}
 
 	asList := ir.NewAssignListStmt(pos, ir.OAS2, lhs, rhs)
-	asList.SetCounter(recvOrFn.Counter())
 	init.Append(typecheck.Stmt(asList))
 
 	return newRecvOrFn, lhs[1:]
@@ -462,12 +461,10 @@ func condCall(curfn *ir.Func, pos src.XPos, cond ir.Node, thenCall, elseCall *ir
 		// Copy slice so edits in one location don't affect another.
 		thenRet := append([]ir.Node(nil), retvars...)
 		thenAsList := ir.NewAssignListStmt(pos, ir.OAS2, thenRet, []ir.Node{thenCall})
-		thenAsList.SetCounter(thenCall.Counter())
 		thenBlock.Append(typecheck.Stmt(thenAsList))
 
 		elseRet := append([]ir.Node(nil), retvars...)
 		elseAsList := ir.NewAssignListStmt(pos, ir.OAS2, elseRet, []ir.Node{elseCall})
-		elseAsList.SetCounter(elseCall.Counter())
 		elseBlock.Append(typecheck.Stmt(elseAsList))
 	}
 
@@ -537,7 +534,6 @@ func rewriteInterfaceCall(call *ir.CallExpr, curfn, callee *ir.Func, concretetyp
 	assert := ir.NewTypeAssertExpr(pos, recv, concretetyp)
 
 	assertAsList := ir.NewAssignListStmt(pos, ir.OAS2, []ir.Node{tmpnode, tmpok}, []ir.Node{typecheck.Expr(assert)})
-	assertAsList.SetCounter(call.Counter())
 	init.Append(typecheck.Stmt(assertAsList))
 
 	concreteCallee := typecheck.XDotMethod(pos, tmpnode, method, true)

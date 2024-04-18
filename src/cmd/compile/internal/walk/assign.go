@@ -49,19 +49,14 @@ func walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 
 	if n.Op() == ir.OASOP {
 		// Rewrite x op= y into x = x op y.
-		c := n.Counter()
 		n = ir.NewAssignStmt(base.Pos, left, typecheck.Expr(ir.NewBinaryExpr(base.Pos, n.(*ir.AssignOpStmt).AsOp, left, right)))
-		if n.Counter() < c {
-			// This happens when rewriting A++ expr
-			n.SetCounter(c)
-		}
 	} else {
 		n.(*ir.AssignStmt).X = left
 	}
 	as := n.(*ir.AssignStmt)
 
 	if oaslit(as, init) {
-		return ir.NewBlockStmt(as.Pos(), as.Counter(), nil)
+		return ir.NewBlockStmt(as.Pos(), nil)
 	}
 
 	if as.Y == nil {
@@ -144,13 +139,13 @@ func walkAssignFunc(init *ir.Nodes, n *ir.AssignListStmt) ir.Node {
 	init.Append(r)
 
 	ll := ascompatet(n.Lhs, r.Type())
-	return ir.NewBlockStmt(src.NoXPos, n.Counter(), ll)
+	return ir.NewBlockStmt(src.NoXPos, ll)
 }
 
 // walkAssignList walks an OAS2 node.
 func walkAssignList(init *ir.Nodes, n *ir.AssignListStmt) ir.Node {
 	init.Append(ir.TakeInit(n)...)
-	return ir.NewBlockStmt(src.NoXPos, n.Counter(), ascompatee(ir.OAS, n.Lhs, n.Rhs))
+	return ir.NewBlockStmt(src.NoXPos, ascompatee(ir.OAS, n.Lhs, n.Rhs))
 }
 
 // walkAssignMapRead walks an OAS2MAPR node.

@@ -536,7 +536,7 @@ func typecheck1(n ir.Node, top int) ir.Node {
 			// Empty identifier is valid but useless.
 			// Eliminate now to simplify life later.
 			// See issues 7538, 11589, 11593.
-			n = ir.NewBlockStmt(n.Pos(), n.Counter(), nil)
+			n = ir.NewBlockStmt(n.Pos(), nil)
 		}
 		return n
 
@@ -640,7 +640,7 @@ func RewriteNonNameCall(n *ir.CallExpr) {
 
 	tmp := TempAt(base.Pos, ir.CurFunc, (*np).Type())
 	as := ir.NewAssignStmt(base.Pos, tmp, *np)
-	as.PtrInit().Append(Stmt(ir.NewDecl(n.Pos(), ir.ODCL, tmp, n.Counter())))
+	as.PtrInit().Append(Stmt(ir.NewDecl(n.Pos(), ir.ODCL, tmp)))
 	*np = tmp
 
 	n.PtrInit().Append(Stmt(as))
@@ -650,12 +650,11 @@ func RewriteNonNameCall(n *ir.CallExpr) {
 // so the backend wouldn't need to worry about tuple-valued expressions.
 func RewriteMultiValueCall(n ir.InitNode, call ir.Node) {
 	as := ir.NewAssignListStmt(base.Pos, ir.OAS2, nil, []ir.Node{call})
-	as.SetCounter(call.Counter())
 	results := call.Type().Fields()
 	list := make([]ir.Node, len(results))
 	for i, result := range results {
 		tmp := TempAt(base.Pos, ir.CurFunc, result.Type)
-		as.PtrInit().Append(ir.NewDecl(base.Pos, ir.ODCL, tmp, call.Counter()))
+		as.PtrInit().Append(ir.NewDecl(base.Pos, ir.ODCL, tmp))
 		as.Lhs.Append(tmp)
 		list[i] = tmp
 	}

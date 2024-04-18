@@ -21,10 +21,6 @@ type Node interface {
 	// Formatting
 	Format(s fmt.State, verb rune)
 
-	// Node profile counter.
-	Counter() int64
-	SetCounter(c int64)
-
 	// Source position.
 	Pos() src.XPos
 	SetPos(x src.XPos)

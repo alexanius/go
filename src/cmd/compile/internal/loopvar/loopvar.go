@@ -110,7 +110,6 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 					tk := typecheck.TempAt(base.Pos, fn, n.Type())
 					tk.SetTypecheck(1)
 					as := ir.NewAssignStmt(x.Pos(), n, tk)
-					as.SetCounter(n.Counter())
 					as.Def = true
 					as.SetTypecheck(1)
 					x.Body.Prepend(as)
@@ -304,7 +303,6 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 						zPrimeForZ[z] = tz
 
 						as := ir.NewAssignStmt(x.Pos(), z, tz)
-						as.SetCounter(z.Counter())
 						as.Def = true
 						as.SetTypecheck(1)
 						preBody.Append(as)
@@ -366,7 +364,7 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 						tmpFirstDcl = typecheck.Stmt(ir.NewAssignStmt(x.Pos(), tmpFirst, ir.NewBool(base.Pos, true)))
 						tmpFirstSetFalse := typecheck.Stmt(ir.NewAssignStmt(x.Pos(), tmpFirst, ir.NewBool(base.Pos, false)))
 						ifTmpFirst := ir.NewIfStmt(x.Pos(), tmpFirst, ir.Nodes{tmpFirstSetFalse}, ir.Nodes{x.Post})
-						ifTmpFirst.PtrInit().Append(typecheck.Stmt(ir.NewDecl(base.Pos, ir.ODCL, tmpFirst, x.Counter()))) // declares tmpFirst
+						ifTmpFirst.PtrInit().Append(typecheck.Stmt(ir.NewDecl(base.Pos, ir.ODCL, tmpFirst))) // declares tmpFirst
 						preBody.Append(typecheck.Stmt(ifTmpFirst))
 					}
 
