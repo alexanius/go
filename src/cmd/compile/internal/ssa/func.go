@@ -86,21 +86,21 @@ type Func struct {
 type Counter = int64
 
 // The type of index in the function counter table
-type T_index = *Block//src.XPos/*ir.*///Node
+type T_index = *Block
 
-// The type of a table with 
+// The type of a table with counters
 type NodeProfTable = map[T_index]Counter
 
 // Set the counter c to the node n in the function fn
-func SetCounter3(fn *Func, b *Block, c Counter) {
-	idx := b //n.Pos()
+func SetCounter(fn *Func, b *Block, c Counter) {
+	idx := b
 	t := fn.ProfTable
 	t[idx] = c
 }
 
 // Get the counter c to the node n in the function fn
-func GetCounter3(fn *Func, b *Block) Counter {
-	idx := b //n.Pos()
+func GetCounter(fn *Func, b *Block) Counter {
+	idx := b
 	t := fn.ProfTable
 	return t[idx]
 }

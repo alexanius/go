@@ -313,7 +313,8 @@ func makeABIWrapper(f *ir.Func, wrapperABI obj.ABI) {
 	if tailcall {
 		tail = ir.NewTailCallStmt(base.Pos, call)
 	} else if fn.Type().NumResults() > 0 {
-		n := ir.NewReturnStmt(base.Pos, []ir.Node{call})
+		n := ir.NewReturnStmt(base.Pos, nil)
+		n.Results = []ir.Node{call}
 		tail = n
 	}
 	fn.Body.Append(tail)

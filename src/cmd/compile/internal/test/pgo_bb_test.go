@@ -140,7 +140,7 @@ var testInline1DumpPatterns = []*checkPair{
 	// Check, that assign in first branch has non-zero counter
 	{regexp.MustCompile(`[1-9][0-9]* \..*AS tc\(1\).*bb_test.go:94`), false},
 	// Check, that assign in second branch has zero counter
-	{regexp.MustCompile(`0* \..*AS tc\(1\).*bb_test.go:106`), false},
+	{regexp.MustCompile(`0* \..*SUB.*bb_test.go:96`), false},
 
 	// Assembly checks
 	{regexp.MustCompile(`b12 \([1-9][0-9]*\).*JMP`), false},

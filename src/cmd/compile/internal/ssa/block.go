@@ -16,9 +16,6 @@ type Block struct {
 	// these IDs densely, but no guarantees.
 	ID ID
 
-	// The profile counter for the block
-	Counter int64
-
 	// Source position for block's control operation
 	Pos src.XPos
 
@@ -72,10 +69,6 @@ type Block struct {
 	valstorage  [9]*Value
 }
 
-func (b *Block) GetCounter() Counter {
-	return GetCounter3(b.Func, b)
-}
-
 // Edge represents a CFG edge.
 // Example edges for b branching to either c or d.
 // (c and d have other predecessors.)
@@ -125,7 +118,7 @@ type BlockKind int16
 // short form print
 func (b *Block) String() string {
 	if base.Flag.BbPgoProfile {
-		return fmt.Sprintf("b%d (%d)", b.ID, b.GetCounter())
+		return fmt.Sprintf("b%d (%d)", b.ID, GetCounter(b.Func, b))
 	} else {
 		return fmt.Sprintf("b%d", b.ID)
 	}

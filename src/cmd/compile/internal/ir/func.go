@@ -142,24 +142,23 @@ type Func struct {
 	ProfTable NodeProfTable
 }
 
-
 // The type of a counter in node
 type Counter = int64
 
 // The type of index in the function counter table
-type T_index = string//uint//src.XPos/*ir.*///Node
+type counterIndex = string
 
-// The type of a table with 
-type NodeProfTable = map[T_index]Counter
+// The type of a table with counters
+type NodeProfTable = map[counterIndex]Counter
 
-// shouldSetCounter returns true if this node type should have a counter
+// ShouldSetCounter returns true if this node type should have a counter
 func ShouldSetCounter(n Node) bool {
 	op := n.Op()
-	return op != ONAME && op != OLITERAL //&& op != OBLOCK
+	return op != ONAME && op != OLITERAL
 }
 
 // Set the counter c to the node n in the function fn
-func SetCounter2(fn *Func, n Node, c Counter) {
+func SetCounter(fn *Func, n Node, c Counter) {
 	if !ShouldSetCounter(n) {
 		return
 	}
@@ -174,13 +173,12 @@ func SetCounter2(fn *Func, n Node, c Counter) {
 }
 
 // Get the counter c to the node n in the function fn
-func GetCounter2(fn */*ir.*/Func, n /*ir.*/Node) Counter {
+func GetCounter(fn *Func, n Node) Counter {
 	if !ShouldSetCounter(n) {
 		return 0
 	}
 
 	idx := fmt.Sprintf("%d:%d", n.Pos().FileIndex(), n.Pos().Line())
-//	idx := n.Pos().Line()
 	t := fn.ProfTable
 	return t[idx]
 }
@@ -188,7 +186,6 @@ func GetCounter2(fn */*ir.*/Func, n /*ir.*/Node) Counter {
 // Get the counter c to the node n in the function fn
 func GetCounterByPos2(fn *Func, p src.XPos) Counter {
 	idx := fmt.Sprintf("%d:%d", p.FileIndex(), p.Line())
-//	idx := p.Line()
 	t := fn.ProfTable
 	return t[idx]
 }

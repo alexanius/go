@@ -95,7 +95,7 @@ func setCounters(fs *FuncSamples, f *ir.Func, pass string) {
 		}
 
 		// We should use cumulative counter, as flat may be zero
-		ir.SetCounter2(f, n, sample[0].Value[1])
+		ir.SetCounter(f, n, sample[0].Value[1])
 
 		if bbDebugPrint {
 			fmt.Println("back_prop init: ", printOp(n), " new: ", sample[0].Value[1])
@@ -207,9 +207,9 @@ func backPropNodeListCounterRec(f *ir.Func, nodes ir.Nodes, depth int, watched m
 			n := nds[i]
 			if ir.ShouldSetCounter(n) {
 				if bbDebugPrint {
-					fmt.Println("back_prop (list): ", printOp(n), " old: ", ir.GetCounter2(f, n), " new: ", c)
+					fmt.Println("back_prop (list): ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", c)
 				}
-				ir.SetCounter2(f, n, c)
+				ir.SetCounter(f, n, c)
 			}
 		}
 	}
@@ -254,7 +254,7 @@ func backPropNodeCounterRec(f *ir.Func, n ir.Node, depth int, watched map[ir.Nod
 		return 0, false
 	}
 	if watched[n] {
-		return ir.GetCounter2(f, n), false
+		return ir.GetCounter(f, n), false
 	}
 	watched[n] = true
 
@@ -330,11 +330,11 @@ func backPropNodeCounterRec(f *ir.Func, n ir.Node, depth int, watched map[ir.Nod
 		mayReturn = true
 	}
 
-	count = max(count, ir.GetCounter2(f, n))
+	count = max(count, ir.GetCounter(f, n))
 	if bbDebugPrint {
-		fmt.Println("back_prop: ", printOp(n), " old: ", ir.GetCounter2(f, n), " new: ", count)
+		fmt.Println("back_prop: ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", count)
 	}
-	ir.SetCounter2(f, n, count)
+	ir.SetCounter(f, n, count)
 //	n.SetCounter(count)
 
 	return count, mayReturn
@@ -343,7 +343,7 @@ func backPropNodeCounterRec(f *ir.Func, n ir.Node, depth int, watched map[ir.Nod
 // forwardPropNodeListCounterRec for all nodes in the list launch forward propagation
 func forwardPropNodeListCounterRec(f *ir.Func, nodes ir.Nodes, depth int, watched map[ir.Node]bool) {
 	for _, n := range nodes {
-		forwardPropNodeCounterRec(f, n, ir.GetCounter2(f, n), depth, watched)
+		forwardPropNodeCounterRec(f, n, ir.GetCounter(f, n), depth, watched)
 	}
 }
 
@@ -373,9 +373,9 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 
 	if ir.ShouldSetCounter(n) {
 		if bbDebugPrint {
-			fmt.Println("forward_prop: ", printOp(n), " old: ", ir.GetCounter2(f, n), " new: ", c)
+			fmt.Println("forward_prop: ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", c)
 		}
-		ir.SetCounter2(f, n, c)
+		ir.SetCounter(f, n, c)
 	}
 
 	if n.Op() == ir.OIF {
@@ -385,16 +385,16 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 		bodyLen := len(n.Body)
 		if bodyLen != 0 {
 			// The first node has the maximal counter
-			bodyCount = ir.GetCounter2(f, n.Body[0])
+			bodyCount = ir.GetCounter(f, n.Body[0])
 		}
 		elseCount := int64(0)
 		elseLen := len(n.Else)
 		if elseLen != 0 {
 			// The first node has the maximal counter
-			elseCount = ir.GetCounter2(f, n.Else[0])
+			elseCount = ir.GetCounter(f, n.Else[0])
 		}
 
-		condCount := ir.GetCounter2(f, n.Cond)
+		condCount := ir.GetCounter(f, n.Cond)
 
 		if bodyCount+elseCount > c {
 			// This is case, when sum of branches counters is larger, than the
@@ -418,13 +418,13 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 
 		if bodyLen != 0 {
 //			n.Body[0].SetCounter(bodyCount)
-			ir.SetCounter2(f, n.Body[0], bodyCount)
+			ir.SetCounter(f, n.Body[0], bodyCount)
 			forwardPropNodeListCounterRec(f, n.Body, depth+1, watched)
 		}
 
 		if elseLen != 0 {
 //			n.Else[0].SetCounter(elseCount)
-			ir.SetCounter2(f, n.Else[0], elseCount)
+			ir.SetCounter(f, n.Else[0], elseCount)
 			forwardPropNodeListCounterRec(f, n.Else, depth+1, watched)
 		}
 		forwardPropNodeCounterRec(f, n.Cond, c, depth+1, watched)
@@ -434,14 +434,14 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 		if n.Body != nil {
 			bC = c
 			if len(n.Body) != 0 {
-				bC = ir.GetCounter2(f, n.Body[0])
+				bC = ir.GetCounter(f, n.Body[0])
 			}
 		}
 		if n.Cond != nil {
-			cC = ir.GetCounter2(f, n.Cond)
+			cC = ir.GetCounter(f, n.Cond)
 		}
 		if n.Post != nil {
-			pC = ir.GetCounter2(f, n.Post)
+			pC = ir.GetCounter(f, n.Post)
 		}
 
 		c = max(bC, cC, pC)
@@ -496,7 +496,7 @@ func setCounterToNodeRec(funcTable *FuncSampleTable, fs *FuncSamples, f *ir.Func
 	if fs != nil && inlCount != 0 {
 		sample, ok := fs.Sample[int64(n.Pos().Line())]
 		if ok {
-			ir.SetCounter2(f, n, sample[0].Value[1])
+			ir.SetCounter(f, n, sample[0].Value[1])
 
 			if bbDebugPrint {
 				fmt.Println("inline_correction init: ", printOp(n), " new: ", sample[0].Value[1])
@@ -547,7 +547,7 @@ func inlineCorrectionNodeListCounterRec(funcTable *FuncSampleTable, fs *FuncSamp
 			fSym := base.Ctxt.InlTree.InlinedFunction(int(n.Index))
 			name := fSym.String()
 			curFuncTable = (*funcTable)[name]
-			inlCount = ir.GetCounter2(f, n)
+			inlCount = ir.GetCounter(f, n)
 			hadInl = true
 
 			if bbDebugPrint {
@@ -626,7 +626,7 @@ func SetBBCounters(irFn *ir.Func, ssaFn *ssa.Func) {
 
 	for _, b := range ssaFn.Blocks {
 		c := getMaxCounter(b)
-		ssa.SetCounter3(ssaFn, b, ssa.Counter(c))
+		ssa.SetCounter(ssaFn, b, ssa.Counter(c))
 		if bbDebugPrint {
 			fmt.Printf("Set counter %d to b%d on line %d\n", c, b.ID, b.Pos.Line())
 		}

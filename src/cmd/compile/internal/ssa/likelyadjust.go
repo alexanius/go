@@ -133,8 +133,8 @@ func likelyadjust(f *Func) {
 		case BlockExit:
 			if base.Flag.BbPgoProfile &&
 				len(b.Preds) == 1 &&
-				b.Preds[0].b.Counter != 0 &&
-				b.Counter != 0 {
+				GetCounter(f, b.Preds[0].b) != 0 &&
+				GetCounter(f, b) != 0 {
 				// If we actualy visit this block - it is not very unlikely
 				usedPgo = true
 			} else {
@@ -200,31 +200,24 @@ func likelyadjust(f *Func) {
 					}
 				} else {
 					if base.Flag.BbPgoProfile &&
-						b.Succs[0].b.Counter+b.Succs[1].b.Counter > 0 &&
+						GetCounter(f, b.Succs[0].b) + GetCounter(f, b.Succs[1].b) > 0 &&
 						len(b.Succs[0].b.Preds) == 1 &&
 						len(b.Succs[1].b.Preds) == 1 {
 
-						if b.Succs[0].b.Counter == 0 && len(b.Succs[0].b.Succs) == 1 {
-							b.Succs[0].b.Counter = b.Succs[0].b.Succs[0].b.Counter
-						}
-						if b.Succs[1].b.Counter == 0 && len(b.Succs[1].b.Succs) == 1 {
-							b.Succs[1].b.Counter = b.Succs[1].b.Succs[0].b.Counter
-						}
-
-						if b.Succs[1].b.Counter == 0 {
+						if GetCounter(f, b.Succs[1].b) == 0 {
 							prediction = BranchLikely
 							usedPgo = true
 							if f.pass.debug > 0 {
 								describeBranchPrediction(f, b, certain[b0], certain[b1], prediction)
 							}
-						} else if b.Succs[0].b.Counter == 0 {
+						} else if GetCounter(f, b.Succs[0].b) == 0 {
 							prediction = BranchUnlikely
 							usedPgo = true
 							if f.pass.debug > 0 {
 								describeBranchPrediction(f, b, certain[b1], certain[b0], prediction)
 							}
 						} else {
-							ratio := float32(b.Succs[0].b.Counter) / float32(b.Succs[1].b.Counter)
+							ratio := float32(GetCounter(f, b.Succs[0].b)) / float32(GetCounter(f, b.Succs[1].b))
 							// We change likelyness if the difference between to branches is big enough
 							if ratio > 1.2 {
 								prediction = BranchLikely
