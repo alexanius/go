@@ -571,7 +571,7 @@ func buildssa(fn *ir.Func, worker int) *ssa.Func {
 
 	s.insertPhis()
 
-	if base.Flag.BbPgoProfile {
+	if base.Flag.PgoBbProfile {
 		pgoir.SetBBCounters(fn, s.f)
 	}
 
@@ -598,6 +598,7 @@ func buildssa(fn *ir.Func, worker int) *ssa.Func {
 			s.f.RegArgs = append(s.f.RegArgs, ssa.Spill{Reg: reg, Offset: fo + o, Type: t})
 		}
 	}
+
 	return s.f
 }
 
@@ -7282,6 +7283,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			valueToProgAfter[i] = nil
 		}
 	}
+
 	// If the very first instruction is not tagged as a statement,
 	// debuggers may attribute it to previous function in program.
 	firstPos := src.NoXPos

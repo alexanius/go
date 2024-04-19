@@ -50,7 +50,6 @@ go/flag:build-C
 go/flag:build-a
 go/flag:build-asan
 go/flag:build-asmflags
-go/flag:build-bbpgo
 go/flag:build-buildmode
 go/flag:build-buildvcs
 go/flag:build-compiler
@@ -74,6 +73,7 @@ go/flag:build-o
 go/flag:build-overlay
 go/flag:build-p
 go/flag:build-pgo
+go/flag:build-pgobb
 go/flag:build-pkgdir
 go/flag:build-race
 go/flag:build-tags
@@ -88,7 +88,6 @@ go/flag:clean-C
 go/flag:clean-a
 go/flag:clean-asan
 go/flag:clean-asmflags
-go/flag:clean-bbpgo
 go/flag:clean-buildmode
 go/flag:clean-buildvcs
 go/flag:clean-cache
@@ -112,6 +111,7 @@ go/flag:clean-n
 go/flag:clean-overlay
 go/flag:clean-p
 go/flag:clean-pgo
+go/flag:clean-pgobb
 go/flag:clean-pkgdir
 go/flag:clean-r
 go/flag:clean-race
@@ -138,7 +138,6 @@ go/flag:fix-C
 go/flag:fix-a
 go/flag:fix-asan
 go/flag:fix-asmflags
-go/flag:fix-bbpgo
 go/flag:fix-buildmode
 go/flag:fix-buildvcs
 go/flag:fix-compiler
@@ -159,6 +158,7 @@ go/flag:fix-n
 go/flag:fix-overlay
 go/flag:fix-p
 go/flag:fix-pgo
+go/flag:fix-pgobb
 go/flag:fix-pkgdir
 go/flag:fix-race
 go/flag:fix-tags
@@ -182,7 +182,6 @@ go/flag:generate-C
 go/flag:generate-a
 go/flag:generate-asan
 go/flag:generate-asmflags
-go/flag:generate-bbpgo
 go/flag:generate-buildmode
 go/flag:generate-buildvcs
 go/flag:generate-compiler
@@ -202,6 +201,7 @@ go/flag:generate-n
 go/flag:generate-overlay
 go/flag:generate-p
 go/flag:generate-pgo
+go/flag:generate-pgobb
 go/flag:generate-pkgdir
 go/flag:generate-race
 go/flag:generate-run
@@ -218,7 +218,6 @@ go/flag:get-C
 go/flag:get-a
 go/flag:get-asan
 go/flag:get-asmflags
-go/flag:get-bbpgo
 go/flag:get-buildmode
 go/flag:get-buildvcs
 go/flag:get-compiler
@@ -242,6 +241,7 @@ go/flag:get-n
 go/flag:get-overlay
 go/flag:get-p
 go/flag:get-pgo
+go/flag:get-pgobb
 go/flag:get-pkgdir
 go/flag:get-race
 go/flag:get-t
@@ -258,7 +258,6 @@ go/flag:install-C
 go/flag:install-a
 go/flag:install-asan
 go/flag:install-asmflags
-go/flag:install-bbpgo
 go/flag:install-buildmode
 go/flag:install-buildvcs
 go/flag:install-compiler
@@ -281,6 +280,7 @@ go/flag:install-n
 go/flag:install-overlay
 go/flag:install-p
 go/flag:install-pgo
+go/flag:install-pgobb
 go/flag:install-pkgdir
 go/flag:install-race
 go/flag:install-tags
@@ -295,7 +295,6 @@ go/flag:list-C
 go/flag:list-a
 go/flag:list-asan
 go/flag:list-asmflags
-go/flag:list-bbpgo
 go/flag:list-buildmode
 go/flag:list-buildvcs
 go/flag:list-compiled
@@ -326,6 +325,7 @@ go/flag:list-n
 go/flag:list-overlay
 go/flag:list-p
 go/flag:list-pgo
+go/flag:list-pgobb
 go/flag:list-pkgdir
 go/flag:list-race
 go/flag:list-retracted
@@ -479,7 +479,6 @@ go/flag:run-C
 go/flag:run-a
 go/flag:run-asan
 go/flag:run-asmflags
-go/flag:run-bbpgo
 go/flag:run-buildmode
 go/flag:run-buildvcs
 go/flag:run-compiler
@@ -503,6 +502,7 @@ go/flag:run-n
 go/flag:run-overlay
 go/flag:run-p
 go/flag:run-pgo
+go/flag:run-pgobb
 go/flag:run-pkgdir
 go/flag:run-race
 go/flag:run-tags
@@ -517,7 +517,6 @@ go/flag:test-C
 go/flag:test-a
 go/flag:test-asan
 go/flag:test-asmflags
-go/flag:test-bbpgo
 go/flag:test-bench
 go/flag:test-benchmem
 go/flag:test-benchtime
@@ -565,6 +564,7 @@ go/flag:test-overlay
 go/flag:test-p
 go/flag:test-parallel
 go/flag:test-pgo
+go/flag:test-pgobb
 go/flag:test-pkgdir
 go/flag:test-race
 go/flag:test-run
@@ -644,7 +644,6 @@ go/flag:vet-C
 go/flag:vet-a
 go/flag:vet-asan
 go/flag:vet-asmflags
-go/flag:vet-bbpgo
 go/flag:vet-buildmode
 go/flag:vet-buildvcs
 go/flag:vet-compiler
@@ -664,6 +663,7 @@ go/flag:vet-n
 go/flag:vet-overlay
 go/flag:vet-p
 go/flag:vet-pgo
+go/flag:vet-pgobb
 go/flag:vet-pkgdir
 go/flag:vet-race
 go/flag:vet-tags

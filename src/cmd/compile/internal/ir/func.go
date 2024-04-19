@@ -190,7 +190,6 @@ func GetCounterByPos2(fn *Func, p src.XPos) Counter {
 	return t[idx]
 }
 
-
 // WasmImport stores metadata associated with the //go:wasmimport pragma.
 type WasmImport struct {
 	Module string

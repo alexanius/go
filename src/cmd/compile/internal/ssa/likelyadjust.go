@@ -131,7 +131,7 @@ func likelyadjust(f *Func) {
 		usedPgo := false
 		switch b.Kind {
 		case BlockExit:
-			if base.Flag.BbPgoProfile &&
+			if base.Flag.PgoBbProfile &&
 				len(b.Preds) == 1 &&
 				GetCounter(f, b.Preds[0].b) != 0 &&
 				GetCounter(f, b) != 0 {
@@ -198,8 +198,9 @@ func likelyadjust(f *Func) {
 						f.Warnl(b.Pos, "Branch prediction rule stay in loop%s",
 							describePredictionAgrees(b, prediction))
 					}
+
 				} else {
-					if base.Flag.BbPgoProfile &&
+					if base.Flag.PgoBbProfile &&
 						GetCounter(f, b.Succs[0].b) + GetCounter(f, b.Succs[1].b) > 0 &&
 						len(b.Succs[0].b.Preds) == 1 &&
 						len(b.Succs[1].b.Preds) == 1 {

@@ -178,7 +178,7 @@ and test commands:
 		directory if that file exists, and applies it to the (transitive)
 		dependencies of the main package (other packages are not affected).
 		Special name "off" turns off PGO. The default is "auto".
-	-bbpgo
+	-pgobb
 		enable loading basic block counters. Provides more precise information
 		about cold and hot path of the program and allows compiler to do improve
 		the profile-guided optimizations. Option can used only with PGO enabled
@@ -335,7 +335,7 @@ func AddBuildFlags(cmd *base.Command, mask BuildFlagMask) {
 	cmd.Flag.Var(&load.BuildLdflags, "ldflags", "")
 	cmd.Flag.BoolVar(&cfg.BuildLinkshared, "linkshared", false, "")
 	cmd.Flag.StringVar(&cfg.BuildPGO, "pgo", "auto", "")
-	cmd.Flag.BoolVar(&cfg.BuildBBPGO, "bbpgo", false, "")
+	cmd.Flag.BoolVar(&cfg.BuildPGOBB, "pgobb", false, "")
 	cmd.Flag.StringVar(&cfg.BuildPkgdir, "pkgdir", "", "")
 	cmd.Flag.BoolVar(&cfg.BuildRace, "race", false, "")
 	cmd.Flag.BoolVar(&cfg.BuildMSan, "msan", false, "")

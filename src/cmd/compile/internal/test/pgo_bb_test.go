@@ -230,7 +230,7 @@ func TestPGOBasicBlocks(t *testing.T) {
 
 	// build with -trimpath so the source location (thus the hash)
 	// does not depend on the temporary directory path.
-	gcflag := fmt.Sprintf("-bbpgoprofile -pgoprofile=%s -trimpath %s=>%s", pprof, dir, bbProfPkg)
+	gcflag := fmt.Sprintf("-pgobbprofile -pgoprofile=%s -trimpath %s=>%s", pprof, dir, bbProfPkg)
 
 	out = buildBBPGOInliningTest(t, dir, gcflag, "testIf1")
 	checkBBPGODumps(t, out, testIf1DumpPatterns, "testIf1")

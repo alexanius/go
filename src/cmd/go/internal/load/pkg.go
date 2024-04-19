@@ -2937,9 +2937,9 @@ func setPGOProfilePath(pkgs []*Package) {
 			return
 		}
 
-		if cfg.BuildBBPGO {
-			appendBuildSetting(p.Internal.BuildInfo, "-bbpgo", "true")
-			appendBuildSetting(p.Internal.BuildInfo, "-bbpgoprofile", "true")
+		if cfg.BuildPGOBB {
+			appendBuildSetting(p.Internal.BuildInfo, "-pgobb", "true")
+			appendBuildSetting(p.Internal.BuildInfo, "-pgobbprofile", "true")
 		}
 
 		if cfg.BuildTrimpath {
@@ -2955,8 +2955,8 @@ func setPGOProfilePath(pkgs []*Package) {
 
 	switch cfg.BuildPGO {
 	case "off":
-		if cfg.BuildBBPGO {
-			base.Fatalf("The \"-bbpgo\" option can be enabled only if \"-pgo\" is not \"off\"")
+		if cfg.BuildPGOBB {
+			base.Fatalf("The \"-pgobb\" option can be enabled only if \"-pgo\" is not \"off\"")
 		}
 		return
 

@@ -117,7 +117,7 @@ type BlockKind int16
 
 // short form print
 func (b *Block) String() string {
-	if base.Flag.BbPgoProfile {
+	if base.Flag.PgoBbProfile {
 		return fmt.Sprintf("b%d (%d)", b.ID, GetCounter(b.Func, b))
 	} else {
 		return fmt.Sprintf("b%d", b.ID)

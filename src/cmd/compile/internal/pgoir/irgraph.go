@@ -155,7 +155,7 @@ func New(profileFile string) (*Profile, error) {
 	wg := createIRGraph(pgoProf.NamedEdgeMap)
 
 	var fs *FuncSampleTable
-	if base.Flag.BbPgoProfile {
+	if base.Flag.PgoBbProfile {
 		// Load and propagate counters for each AST node
 		fs = LoadCounters(pgoProf.PProf)
 	}

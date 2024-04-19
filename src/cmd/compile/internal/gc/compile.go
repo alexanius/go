@@ -181,7 +181,7 @@ func compileFunctions(profile *pgoir.Profile) {
 			fn := fn
 			queue(func(worker int) {
 
-				if base.Flag.BbPgoProfile && profile != nil {
+				if base.Flag.PgoBbProfile && profile != nil {
 					pgoir.CorrectProfileAfterInline(profile.Prof, fn)
 				}
 
