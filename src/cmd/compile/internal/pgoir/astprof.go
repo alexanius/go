@@ -33,6 +33,48 @@ type FuncSamples struct {
 
 type FuncSampleTable map[string]*FuncSamples
 
+// setCounters sets the counters loaded from the pprof file to the function
+func setCounters(funcTable *FuncSampleTable, pass string) {
+	// Visit all the AST functions and for every node set the counter
+	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
+
+	// Set counters to all the functions
+	for _, fs := range *funcTable {
+		if isDebug && strings.Contains(ir.LinkFuncName(fs.Func), debugFuncName) {
+//			fmt.Printf("Start bbpgo setting counters on pass %s to function: %s\n",
+//				pass,
+//				ir.LinkFuncName(fs.Func))
+//			bbDebugPrint = true
+		}
+
+		ir.VisitList(fs.Func.Body, func(n ir.Node) {
+			if bbDebugPrint {
+				fmt.Println("try back_prop init: ", printOp(n))
+			}
+			sample, ok := fs.Sample[int64(n.Pos().Line())]
+			if !ok {
+				return
+			}
+
+			// We should use cumulative counter, as flat may be zero
+			ir.SetCounter(fs.Func, n, sample[0].Value[1])
+
+			if bbDebugPrint {
+				fmt.Println("back_prop init: ", printOp(n), " new: ", sample[0].Value[1])
+			}
+		})
+
+		propagateCounters(fs.Func, pass)
+
+		if isDebug && strings.Contains(ir.LinkFuncName(fs.Func), debugFuncName) {
+			fmt.Printf("Finish bbpgo setting counters on pass %s to function: %s\n",
+				pass,
+				ir.LinkFuncName(fs.Func))
+		}
+		bbDebugPrint = false
+	}
+}
+
 // LoadCounters loads counters to the nodes of AST from profile
 func LoadCounters(p *profile.Profile) *FuncSampleTable {
 	// Build a table functionName <-> ir.Func to get quick search
@@ -73,109 +115,18 @@ func LoadCounters(p *profile.Profile) *FuncSampleTable {
 	}
 
 	// Assign counters to the nodes and propagate it
-	SetCounters(&funcTable, nil, nil, "load_counters")
+	setCounters(&funcTable, "load_counters")
 
 	return &funcTable
 }
 
-func setCounters(fs *FuncSamples, f *ir.Func, pass string) {
+// propagateCounters this function starts back and forward counter propagation
+func propagateCounters(f *ir.Func, pass string) {
 	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
 	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
-		fmt.Printf("Start bbpgo debug  on pass %s for: '%s'\n", pass, ir.LinkFuncName(f))
-		bbDebugPrint = true
-	}
-
-	ir.VisitList(f.Body, func(n ir.Node) {
-		if bbDebugPrint {
-			fmt.Println("try back_prop init: ", printOp(n))
-		}
-		sample, ok := fs.Sample[int64(n.Pos().Line())]
-		if !ok {
-			return
-		}
-
-		// We should use cumulative counter, as flat may be zero
-		ir.SetCounter(f, n, sample[0].Value[1])
-
-		if bbDebugPrint {
-			fmt.Println("back_prop init: ", printOp(n), " new: ", sample[0].Value[1])
-		}
-	})
-
-	bbDebugPrint = false
-}
-
-func SetCountersForFunc(funcTable *FuncSampleTable, f *ir.Func, pass string) {
-	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
-	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
-		fmt.Printf("Start bbpgo setting counters on '%s' for single function: '%s'",
-			pass,
-			ir.LinkFuncName(f))
-		bbDebugPrint = true
-	}
-
-	fs := (*funcTable)[ir.LinkFuncName(f)]
-	setCounters(fs, f, pass)
-	PropagateCounters(f, pass)
-
-	bbDebugPrint = false
-}
-
-// SetCounters sets the counters loaded from the pprof file to the function
-// If pf is nil, than to all the functions from the funcTable will be loaded counters
-// If pf and inlName are not nil, than the counters will be set only into the pf function,
-// but the counters will be loaded from the function inlName. This mode is needed to set
-// counters to the inlined part of function
-func SetCounters(funcTable *FuncSampleTable, pf *ir.Func, inlName *string, pass string) {
-	// Visit all the AST functions and for every node set the counter
-	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
-
-	if pf != nil {
-		// Counters for only one function should be set
-		fs := (*funcTable)[*inlName]
-		if fs != nil {
-			if isDebug && strings.Contains(ir.LinkFuncName(fs.Func), debugFuncName) {
-				println("Start bbpgo setting counters to particular function: ",
-				     ir.LinkFuncName(fs.Func),
-				     "with corrections for inlined function: ",
-				     *inlName)
-				bbDebugPrint = true
-			}
-			setCounters(fs, pf, pass)
-			PropagateCounters(fs.Func, pass)
-
-			bbDebugPrint = false
-		}
-	} else {
-		// Set counters to all the functions
-		for _, fs := range *funcTable {
-			if isDebug && strings.Contains(ir.LinkFuncName(fs.Func), debugFuncName) {
-				fmt.Printf("Start bbpgo setting counters on pass %s to function: %s\n",
-					pass,
-					ir.LinkFuncName(fs.Func))
-				bbDebugPrint = true
-			}
-
-			setCounters(fs, fs.Func, pass)
-			PropagateCounters(fs.Func, pass)
-
-			if isDebug && strings.Contains(ir.LinkFuncName(fs.Func), debugFuncName) {
-				fmt.Printf("Finish bbpgo setting counters on pass %s to function: %s\n",
-					pass,
-					ir.LinkFuncName(fs.Func))
-			}
-			bbDebugPrint = false
-		}
-	}
-}
-
-// PropagateCounters this function starts back and forward counter propagation
-func PropagateCounters(f *ir.Func, pass string) {
-	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
-	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
-		fmt.Printf("Start bbpgo debug on pass '%s' for func '%s'\n",
-			pass, ir.LinkFuncName(f))
-		bbDebugPrint = true
+//		fmt.Printf("Start bbpgo debug on pass '%s' for func '%s'\n",
+//			pass, ir.LinkFuncName(f))
+//		bbDebugPrint = true
 	}
 
 	if f.ProfTable == nil {
@@ -335,7 +286,6 @@ func backPropNodeCounterRec(f *ir.Func, n ir.Node, depth int, watched map[ir.Nod
 		fmt.Println("back_prop: ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", count)
 	}
 	ir.SetCounter(f, n, count)
-//	n.SetCounter(count)
 
 	return count, mayReturn
 }
@@ -417,13 +367,11 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 		//       but currently we do not need it.
 
 		if bodyLen != 0 {
-//			n.Body[0].SetCounter(bodyCount)
 			ir.SetCounter(f, n.Body[0], bodyCount)
 			forwardPropNodeListCounterRec(f, n.Body, depth+1, watched)
 		}
 
 		if elseLen != 0 {
-//			n.Else[0].SetCounter(elseCount)
 			ir.SetCounter(f, n.Else[0], elseCount)
 			forwardPropNodeListCounterRec(f, n.Else, depth+1, watched)
 		}
@@ -571,8 +519,8 @@ func CorrectProfileAfterInline(funcTable *FuncSampleTable, f *ir.Func) {
 
 	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
 	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
-		fmt.Printf("Start bbpgo debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
-		bbDebugPrint = true
+//		fmt.Printf("Start bbpgo debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
+//		bbDebugPrint = true
 	}
 
 	watched := map[ir.Node]bool{}
@@ -592,8 +540,8 @@ func SetBBCounters(irFn *ir.Func, ssaFn *ssa.Func) {
 
 	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
 	if isDebug && strings.Contains(ir.LinkFuncName(irFn), debugFuncName) {
-		fmt.Printf("Start bbpgo debug  on pass 'buildssa' for: '%s'\n", ir.LinkFuncName(irFn))
-		bbDebugPrint = true
+//		fmt.Printf("Start bbpgo debug  on pass 'buildssa' for: '%s'\n", ir.LinkFuncName(irFn))
+//		bbDebugPrint = true
 	}
 
 	if irFn.ProfTable == nil {
@@ -616,7 +564,7 @@ func SetBBCounters(irFn *ir.Func, ssaFn *ssa.Func) {
 					return 0
 				}
 			}
-			c := ir.GetCounterByPos2(irFn, v.Pos)
+			c := ir.GetCounterByPos(irFn, v.Pos)
 			if maxC < c {
 				maxC = c
 			}

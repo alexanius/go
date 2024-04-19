@@ -184,7 +184,7 @@ func GetCounter(fn *Func, n Node) Counter {
 }
 
 // Get the counter c to the node n in the function fn
-func GetCounterByPos2(fn *Func, p src.XPos) Counter {
+func GetCounterByPos(fn *Func, p src.XPos) Counter {
 	idx := fmt.Sprintf("%d:%d", p.FileIndex(), p.Line())
 	t := fn.ProfTable
 	return t[idx]
