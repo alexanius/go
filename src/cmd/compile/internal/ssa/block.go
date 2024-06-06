@@ -70,6 +70,8 @@ type Block struct {
 	succstorage [2]Edge
 	predstorage [4]Edge
 	valstorage  [9]*Value
+
+	LayoutIndex int
 }
 
 // Edge represents a CFG edge.
