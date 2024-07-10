@@ -6,7 +6,9 @@ package ssa
 
 import (
 	"cmd/compile/internal/base"
+	"fmt"
 	"math"
+	"sort"
 )
 
 // layout orders basic blocks in f with the goal of minimizing control flow instructions.
@@ -14,16 +16,28 @@ import (
 // in which those blocks will appear in the assembly output.
 func layout(f *Func) {
 	if base.Flag.PGOBBExttsp /*&& profile != nil*/ {
-		if len(f.Blocks) < 10 {
-			f.Blocks = layoutTsp(f)
-		} else {
-		f.Blocks = layoutOrder(f)
-//			panic("Not implemented")
-//			f.Blocks = layoutExttsp(f)
+
+		// Sometimes the first block occurs not entry block. Fixing it
+		entryIndex := 0
+		for i, b := range f.Blocks {
+			if b == f.Entry {
+				entryIndex = i
+			}
 		}
-	} else {
-		f.Blocks = layoutOrder(f)
-	}
+		if entryIndex != 0 {
+			f.Blocks[entryIndex] = f.Blocks[0]
+			f.Blocks[0] = f.Entry
+		}
+
+			if len(f.Blocks) < 10 {
+				f.Blocks = layoutTsp(f)
+			} else {
+//				f.Blocks = layoutOrder(f)
+				f.Blocks = layoutExttsp(f)
+			}
+		} else {
+			f.Blocks = layoutOrder(f)
+		}
 }
 
 func layoutTsp(f *Func) []*Block {
@@ -133,20 +147,9 @@ func layoutTsp(f *Func) []*Block {
 			Order = append(Order, b)
 		}
 	}
-
-	entryIndex := 0
-	for i, b := range Order {
-		if b == f.Entry {
-			entryIndex = i
-		}
-	}
-	if entryIndex != 0 {
-		Order[entryIndex] = Order[0]
-		Order[0] = f.Entry
-	}
 	return Order
 }
-/*
+
 
 var ForwardDistance uint64 = 1024
 var BackwardDistance uint64 = 640
@@ -479,7 +482,7 @@ func (E *ExtTSP) initialize() {
 			BB:              *b,
 			CurChain:        nil,
 			Size:            uint64(size),
-			ExecutionCount:  uint64((*b).BBFreq.RawCount),
+			ExecutionCount:  uint64(GetCounter(E.f, *b)),
 			Index:           int((*b).LayoutIndex),
 			CurIndex:        0,
 			EstimatedAddr:   0,
@@ -505,14 +508,14 @@ func (E *ExtTSP) initialize() {
 		Bb := &E.AllBlocks[Idx]
 		for _, e := range Bb.BB.Succs {
 			if Bb.BB != e.b {
-				if Bb.BB.BBFreq.RawCount != 0 && e.b.BBFreq.RawCount != 0 && e.EdgeFreq.RawCount == 0 {
-					Count := uint64(e.EdgeFreq.RawCount)
+				if GetCounter(E.f, Bb.BB) != 0 &&  GetCounter(E.f, e.b) != 0 /*e.EdgeFreq.RawCount == 0*/ {
+					Count := GetCounter(E.f, Bb.BB)//uint64(e.EdgeFreq.RawCount) // TODO
 					if E.f.pass.debug > 2 {
 						fmt.Printf("double check b%d b%d %d\n", Bb.BB.ID, e.b.ID, Count)
 					}
 				}
-				if e.EdgeFreq.RawCount != 0 {
-					Count := uint64(e.EdgeFreq.RawCount)
+				if /*e.EdgeFreq.RawCount*/ GetCounter(E.f, Bb.BB) != 0 {
+					Count := uint64(GetCounter(E.f, Bb.BB)) // uint64(e.EdgeFreq.RawCount) // TODO
 					E.AllBlocks[e.b.LayoutIndex].InWeight = E.AllBlocks[e.b.LayoutIndex].InWeight + Count
 					E.AllBlocks[e.b.LayoutIndex].InJumps = append(E.AllBlocks[e.b.LayoutIndex].InJumps, Jump{B: Bb, V: Count})
 					Bb.OutWeight = Bb.OutWeight + Count
@@ -909,7 +912,7 @@ func (E *ExtTSP) mergeColdChains() {
 	}
 }
 // Concatenate all chains into a final order
-func (E *ExtTSP) concatChains() {
+func (E *ExtTSP) concatChains() []*Block {
 	var SortedChains []*Chain
 	SortedChains = make([]*Chain, 0)
 	if E.f.pass.debug > 2 {
@@ -963,10 +966,10 @@ func (E *ExtTSP) concatChains() {
 			Order = append(Order, B.BB)
 		}
 	}
-	E.f.Blocks = Order
+	return Order
 }
 
-func (E *ExtTSP) run() {
+func (E *ExtTSP) run() []*Block {
 	E.initialize()
 	// Pass 1: Merge blocks with their fallthrough successors
 	E.mergeFallthroughs()
@@ -975,15 +978,18 @@ func (E *ExtTSP) run() {
 	// Pass 3: Merge cold blocks to reduce code size
 	E.mergeColdChains()
 	// Collect blocks from all chains
-	E.concatChains()
+	return E.concatChains()
 }
 
 func layoutExttsp(f *Func) []*Block {
-	order := make([]*Block, 0, f.NumBlocks())
-
-
-	return order
-}*/
+	extTSP := ExtTSP{
+		f:         f,
+		AllBlocks: make([]CBlock, 0),
+		AllChains: make([]*Chain, 0),
+		HotChains: make([]*Chain, 0),
+		AllEdges:  make([]CEdge, 0)}
+	return extTSP.run()
+}
 
 // Register allocation may use a different order which has constraints
 // imposed by the linear-scan algorithm.
