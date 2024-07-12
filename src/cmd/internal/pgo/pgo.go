@@ -22,6 +22,9 @@ type Profile struct {
 	// NamedEdgeMap contains all unique call edges in the profile and their
 	// edge weight.
 	NamedEdgeMap NamedEdgeMap
+
+	// FunctionsCounters contains maps for line counters
+	FunctionsCounters *FunctionsCounters
 }
 
 // NamedCallEdge identifies a call edge by linker symbol names and call site
@@ -41,6 +44,12 @@ type NamedEdgeMap struct {
 	// highest to lowest.
 	ByWeight []NamedCallEdge
 }
+
+// LinesCounters represents line <-> counter records
+type LinesCounters map[int64]int64
+
+// FunctionsCounters represents function name <-> LinesCounters records
+type FunctionsCounters map[string]LinesCounters
 
 func emptyProfile() *Profile {
 	// Initialize empty maps/slices for easier use without a requiring a

@@ -77,3 +77,37 @@ func (d *Profile) WriteTo(w io.Writer) (int64, error) {
 
 	return written, nil
 }
+
+// WriteBbTo writes a serialized representation of basic block profile to w.
+//
+// FromSerializedBb can parse the format back to Profile.
+//
+// WriteBbTo implements io.WriterTo.Write.
+func (d *Profile) WriteBbTo(w io.Writer) (int64, error) {
+	bw := bufio.NewWriter(w)
+
+	var written int64
+
+	n, err := bw.WriteString(serializationHeader)
+	written += int64(n)
+	if err != nil {
+		return written, err
+	}
+
+	if d.FunctionsCounters != nil {
+		for fn, fc := range *(d.FunctionsCounters) {
+			n, err = fmt.Fprintf(bw, "func: %s\n", fn)
+			written += int64(n)
+			for line, counter := range fc {
+				n, err = fmt.Fprintf(bw, "%d %d\n", line, counter)
+				written += int64(n)
+			}
+		}
+	}
+
+	if err := bw.Flush(); err != nil {
+		return written, err
+	}
+
+	return written, nil
+}

@@ -1,7 +1,6 @@
 // Copyright 2024 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-
 package pgoir
 
 import (
@@ -9,7 +8,7 @@ import (
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/typecheck"
-	"internal/profile"
+	"cmd/internal/pgo"
 
 	"fmt"
 	"os"
@@ -18,119 +17,78 @@ import (
 	"strings"
 )
 
-var bbDebugPrint = false
+var enableDebug = false  // Set true for debug prints on GODDASFUNC
+var bbDebugPrint = false // Do not change it manually
 
 // Debug print of an operation
 func printOp(n ir.Node) string {
 	return n.Op().String() + ":" + strconv.Itoa(int(n.Pos().Line()))
 }
 
-type FuncSamples struct {
-	Func *ir.Func
-	// This is the map line <-> Sample for quick search
-	Sample map[int64][]*profile.Sample
-}
+// LoadCounters loads counters to the nodes of AST from profile
+func LoadCounters(fc *pgo.FunctionsCounters) {
 
-type FuncSampleTable map[string]*FuncSamples
-
-// setCounters sets the counters loaded from the pprof file to the function
-func setCounters(funcTable *FuncSampleTable, pass string) {
 	// Visit all the AST functions and for every node set the counter
 	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
+	pass := "load_counters"
 
-	// Set counters to all the functions
-	for _, fs := range *funcTable {
-		if isDebug && strings.Contains(ir.LinkFuncName(fs.Func), debugFuncName) {
-			//			fmt.Printf("Start bbpgo setting counters on pass %s to function: %s\n",
-			//				pass,
-			//				ir.LinkFuncName(fs.Func))
-			//			bbDebugPrint = true
-		}
-
-		ir.VisitList(fs.Func.Body, func(n ir.Node) {
-			if bbDebugPrint {
-				fmt.Println("try back_prop init: ", printOp(n))
-			}
-			sample, ok := fs.Sample[int64(n.Pos().Line())]
-			if !ok {
-				return
-			}
-
-			// We should use cumulative counter, as flat may be zero
-			ir.SetCounter(fs.Func, n, sample[0].Value[1])
-
-			if bbDebugPrint {
-				fmt.Println("back_prop init: ", printOp(n), " new: ", sample[0].Value[1])
-			}
-		})
-
-		propagateCounters(fs.Func, pass)
-
-		if isDebug && strings.Contains(ir.LinkFuncName(fs.Func), debugFuncName) {
-			fmt.Printf("Finish bbpgo setting counters on pass %s to function: %s\n",
-				pass,
-				ir.LinkFuncName(fs.Func))
-		}
-		bbDebugPrint = false
-	}
-}
-
-// LoadCounters loads counters to the nodes of AST from profile
-func LoadCounters(p *profile.Profile) *FuncSampleTable {
-	if p == nil {
-		return nil
-	}
-
-	// Build a table functionName <-> ir.Func to get quick search
-	// between profile.Function and ir.Func
-	funcTable := make(FuncSampleTable)
 	ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
 		for _, f := range list {
-			fs := &FuncSamples{
-				Func:   f,
-				Sample: make(map[int64][]*profile.Sample),
-			}
 			if f.ProfTable == nil {
 				f.ProfTable = make(ir.NodeProfTable)
 			}
 			name := ir.LinkFuncName(f)
-			funcTable[name] = fs
+
+			if isDebug && strings.Contains(name, debugFuncName) && enableDebug {
+				fmt.Printf("Start bbpgo setting counters on pass %s to function: %s\n",
+					pass,
+					ir.LinkFuncName(f))
+				bbDebugPrint = true
+			}
+
+			lc, isOk := (*fc)[name]
+
+			if !isOk {
+				// No samples for given function
+				continue
+			}
+
+			ir.VisitList(f.Body, func(n ir.Node) {
+				if bbDebugPrint {
+					fmt.Println("try back_prop init: ", printOp(n))
+				}
+				counter, ok := lc[int64(n.Pos().Line())]
+				if !ok {
+					return
+				}
+
+				// We should use cumulative counter, as flat may be zero
+				ir.SetCounter(f, n, counter)
+
+				if bbDebugPrint {
+					fmt.Println("back_prop init: ", printOp(n), " new: ", counter)
+				}
+			})
+
+			propagateCounters(f, pass)
+
+			if isDebug && strings.Contains(name, debugFuncName) {
+				fmt.Printf("Finish bbpgo setting counters on pass %s to function: %s\n",
+				pass,
+				name)
+			}
+			bbDebugPrint = false
 		}
 	})
-
-	// Watch all samples and add the sample to the function
-	// table lineNum <-> sample
-	for _, s := range p.Sample {
-		lastLocIdx := len(s.Location)
-		if lastLocIdx == 0 {
-			continue
-		}
-
-		for _, loc := range s.Location {
-			for _, l := range loc.Line {
-				fs, ok := funcTable[l.Function.SystemName]
-				if !ok {
-					// This function is not seen inside this package
-					continue
-				}
-				fs.Sample[l.Line] = append(fs.Sample[l.Line], s)
-			}
-		}
-	}
-
-	// Assign counters to the nodes and propagate it
-	setCounters(&funcTable, "load_counters")
-
-	return &funcTable
 }
 
 // propagateCounters this function starts back and forward counter propagation
 func propagateCounters(f *ir.Func, pass string) {
 	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
-	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
-		//		fmt.Printf("Start bbpgo debug on pass '%s' for func '%s'\n",
-		//			pass, ir.LinkFuncName(f))
-		//		bbDebugPrint = true
+	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) && enableDebug {
+		fmt.Printf("Start bbpgo debug on pass '%s' for func '%s'\n",
+			pass, ir.LinkFuncName(f))
+		bbDebugPrint = true
 	}
 
 	if f.ProfTable == nil {
@@ -439,19 +397,19 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 
 //----------------------------- Inline correction functions
 
-func setCounterToNodeRec(funcTable *FuncSampleTable, fs *FuncSamples, f *ir.Func, n ir.Node, depth int, watched map[ir.Node]bool, inlCount ir.Counter) {
+func setCounterToNodeRec(fc *pgo.FunctionsCounters, lc *pgo.LinesCounters, f *ir.Func, n ir.Node, depth int, watched map[ir.Node]bool, inlCount ir.Counter) {
 	if watched[n] {
 		return
 	}
 	watched[n] = true
 
-	if fs != nil && inlCount != 0 {
-		sample, ok := fs.Sample[int64(n.Pos().Line())]
+	if lc != nil && inlCount != 0 {
+		counter, ok := (*lc)[int64(n.Pos().Line())]
 		if ok {
-			ir.SetCounter(f, n, sample[0].Value[1])
+			ir.SetCounter(f, n, counter)
 
 			if bbDebugPrint {
-				fmt.Println("inline_correction init: ", printOp(n), " new: ", sample[0].Value[1])
+				fmt.Println("inline_correction init: ", printOp(n), " new: ", counter)
 			}
 		}
 	}
@@ -476,20 +434,20 @@ func setCounterToNodeRec(funcTable *FuncSampleTable, fs *FuncSamples, f *ir.Func
 
 		switch val := vf.Interface().(type) {
 		case ir.Node:
-			setCounterToNodeRec(funcTable, fs, f, val, depth+1, watched, inlCount)
+			setCounterToNodeRec(fc, lc, f, val, depth+1, watched, inlCount)
 		case ir.Nodes:
-			inlineCorrectionNodeListCounterRec(funcTable, fs, f, val, depth+1, watched, inlCount)
+			inlineCorrectionNodeListCounterRec(fc, lc, f, val, depth+1, watched, inlCount)
 		}
 	}
 }
 
-func inlineCorrectionNodeListCounterRec(funcTable *FuncSampleTable, fs *FuncSamples, f *ir.Func, nodes ir.Nodes, depth int, watched map[ir.Node]bool, inlCount ir.Counter) {
+func inlineCorrectionNodeListCounterRec(fc *pgo.FunctionsCounters, lc *pgo.LinesCounters, f *ir.Func, nodes ir.Nodes, depth int, watched map[ir.Node]bool, inlCount ir.Counter) {
 	if nodes == nil {
 		return
 	}
 
-	startFuncTable := fs
-	curFuncTable := fs
+	startFuncTable := lc
+	curFuncTable := lc
 	hadInl := false
 	oldCounter := inlCount
 
@@ -498,7 +456,8 @@ func inlineCorrectionNodeListCounterRec(funcTable *FuncSampleTable, fs *FuncSamp
 			n := n.(*ir.InlineMarkStmt)
 			fSym := base.Ctxt.InlTree.InlinedFunction(int(n.Index))
 			name := fSym.String()
-			curFuncTable = (*funcTable)[name]
+			tmp := (*fc)[name]
+			curFuncTable = &tmp
 			inlCount = ir.GetCounter(f, n)
 			hadInl = true
 
@@ -507,7 +466,7 @@ func inlineCorrectionNodeListCounterRec(funcTable *FuncSampleTable, fs *FuncSamp
 			}
 		}
 
-		setCounterToNodeRec(funcTable, curFuncTable, f, n, depth+1, watched, inlCount)
+		setCounterToNodeRec(fc, curFuncTable, f, n, depth+1, watched, inlCount)
 
 		if n.Op() == ir.OLABEL && hadInl == true {
 			curFuncTable = startFuncTable
@@ -519,19 +478,19 @@ func inlineCorrectionNodeListCounterRec(funcTable *FuncSampleTable, fs *FuncSamp
 
 // CorrectProfileAfterInline parses function, set counters only to inlined nodes
 // and launches propagation of counters
-func CorrectProfileAfterInline(funcTable *FuncSampleTable, f *ir.Func) {
-	if funcTable == nil {
+func CorrectProfileAfterInline(fc *pgo.FunctionsCounters, f *ir.Func) {
+	if fc == nil {
 		return
 	}
 
 	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
-	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) {
-		//		fmt.Printf("Start bbpgo debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
-		//		bbDebugPrint = true
+	if isDebug && strings.Contains(ir.LinkFuncName(f), debugFuncName) && enableDebug {
+		fmt.Printf("Start bbpgo debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
+		bbDebugPrint = true
 	}
 
 	watched := map[ir.Node]bool{}
-	inlineCorrectionNodeListCounterRec(funcTable, nil, f, f.Body, 0, watched, 0)
+	inlineCorrectionNodeListCounterRec(fc, nil, f, f.Body, 0, watched, 0)
 
 	if bbDebugPrint {
 		fmt.Printf("Finish bbpgo debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
@@ -546,9 +505,9 @@ func CorrectProfileAfterInline(funcTable *FuncSampleTable, f *ir.Func) {
 func SetBBCounters(irFn *ir.Func, ssaFn *ssa.Func) {
 
 	debugFuncName, isDebug := os.LookupEnv("GOSSAFUNC")
-	if isDebug && strings.Contains(ir.LinkFuncName(irFn), debugFuncName) {
-		//		fmt.Printf("Start bbpgo debug  on pass 'buildssa' for: '%s'\n", ir.LinkFuncName(irFn))
-		//		bbDebugPrint = true
+	if isDebug && strings.Contains(ir.LinkFuncName(irFn), debugFuncName) && enableDebug {
+		fmt.Printf("Start bbpgo debug  on pass 'buildssa' for: '%s'\n", ir.LinkFuncName(irFn))
+		bbDebugPrint = true
 	}
 
 	if irFn.ProfTable == nil {

@@ -918,7 +918,7 @@ func FDumpList(w io.Writer, s string, list Nodes, f *Func) {
 // indent prints indentation to w.
 func indent(w io.Writer, depth int, counter int64) {
 	fmt.Fprint(w, "\n")
-	if base.Flag.PgoBbProfile {
+	if base.Flag.PgoBb {
 		fmt.Fprintf(w, "%d ", counter)
 	}
 	for i := 0; i < depth; i++ {

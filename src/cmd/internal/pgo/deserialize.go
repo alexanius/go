@@ -100,3 +100,39 @@ func FromSerialized(r io.Reader) (*Profile, error) {
 	return d, nil
 
 }
+
+// FromSerializedBb parses a profile from serialization output of Profile.WriteTo.
+func FromSerializedBb(r io.Reader) (*FunctionsCounters, error) {
+	d := make(FunctionsCounters)
+
+	scanner := bufio.NewScanner(r)
+	scanner.Split(bufio.ScanLines)
+
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("error reading preprocessed profile: %w", err)
+		}
+		return nil, fmt.Errorf("preprocessed profile missing header")
+	}
+	if gotHdr := scanner.Text() + "\n"; gotHdr != serializationHeader {
+		return nil, fmt.Errorf("preprocessed profile malformed header; got %q want %q", gotHdr, serializationHeader)
+	}
+
+	var lc LinesCounters
+	for scanner.Scan() {
+		readStr := scanner.Text()
+
+		if strings.HasPrefix(readStr, "func: ") {
+			lc = make(LinesCounters)
+			d[readStr[len("func: "):]] = lc
+		} else {
+			split := strings.Split(readStr, " ")
+			line, _    := strconv.ParseInt(split[0], 10, 64)
+			counter, _ := strconv.ParseInt(split[1], 10, 64)
+			lc[line] = counter
+		}
+	}
+
+	return &d, nil
+
+}
