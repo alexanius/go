@@ -117,7 +117,7 @@ func likelyadjust(f *Func) {
 		usedPgo := false
 		switch b.Kind {
 		case BlockExit:
-			if base.Flag.PgoBbProfile &&
+			if base.Flag.PgoBb &&
 				len(b.Preds) == 1 &&
 				GetCounter(f, b.Preds[0].b) != 0 &&
 				GetCounter(f, b) != 0 {
@@ -186,7 +186,7 @@ func likelyadjust(f *Func) {
 					}
 
 				} else {
-					if base.Flag.PgoBbProfile &&
+					if base.Flag.PgoBb &&
 						GetCounter(f, b.Succs[0].b)+GetCounter(f, b.Succs[1].b) > 0 &&
 						len(b.Succs[0].b.Preds) == 1 &&
 						len(b.Succs[1].b.Preds) == 1 {

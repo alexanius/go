@@ -120,7 +120,7 @@ type BlockKind uint8
 
 // short form print
 func (b *Block) String() string {
-	if base.Flag.PgoBbProfile {
+	if base.Flag.PgoBb {
 		return fmt.Sprintf("b%d (%d)", b.ID, GetCounter(b.Func, b))
 	} else {
 		return fmt.Sprintf("b%d", b.ID)

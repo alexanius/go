@@ -596,7 +596,7 @@ func buildssa(fn *ir.Func, worker int, isPgoHot bool) *ssa.Func {
 
 	s.insertPhis()
 
-	if base.Flag.PgoBbProfile {
+	if base.Flag.PgoBb {
 		pgoir.SetBBCounters(fn, s.f)
 	}
 

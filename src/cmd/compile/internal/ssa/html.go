@@ -918,7 +918,7 @@ func (w *HTMLWriter) WriteAST(phase string, buf *bytes.Buffer) {
 				escaped = html.EscapeString(l)
 			}
 		}
-		if base.Flag.PgoBbProfile {
+		if base.Flag.PgoBb {
 			re := regexp.MustCompile(`^([0-9]+) (.+$)`)
 			counter := ""
 			match := re.FindStringSubmatch(escaped)

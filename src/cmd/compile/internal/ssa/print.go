@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cmd/internal/hash"
+	"cmd/compile/internal/base"
 	"cmd/internal/src"
 )
 
@@ -64,7 +65,11 @@ func (p stringFuncPrinter) startBlock(b *Block, reachable bool) {
 	if !p.printDead && !reachable {
 		return
 	}
-	fmt.Fprintf(p.w, "  b%d: (%d)", b.ID, GetCounter(b.Func, b))
+	if base.Flag.PgoBb {
+		fmt.Fprintf(p.w, "  b%d: (%d)", b.ID, GetCounter(b.Func, b))
+	} else {
+		fmt.Fprintf(p.w, "  b%d:", b.ID)
+	}
 	if len(b.Preds) > 0 {
 		io.WriteString(p.w, " <-")
 		for _, e := range b.Preds {

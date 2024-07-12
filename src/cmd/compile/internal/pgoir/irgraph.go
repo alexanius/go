@@ -115,9 +115,6 @@ type Profile struct {
 	// WeightedCG represents the IRGraph built from profile, which we will
 	// update as part of inlining.
 	WeightedCG *IRGraph
-
-	// Loaded raw profile data
-	Prof *FuncSampleTable
 }
 
 // New generates a profile-graph from the profile or pre-processed profile.
@@ -136,12 +133,27 @@ func New(profileFile string) (*Profile, error) {
 
 	var pgoProf *pgo.Profile
 	if isSerialized {
+		var rbb *bufio.Reader = nil
 		pgoProf, err = pgo.FromSerialized(r)
 		if err != nil {
 			return nil, fmt.Errorf("error processing serialized PGO profile: %w", err)
 		}
+
+		if base.Flag.PgoBb {
+			fbb, err := os.Open(profileFile + ".pgobb")
+			if err != nil {
+				return nil, fmt.Errorf("error opening profile: %w", err)
+			}
+			defer fbb.Close()
+
+			rbb = bufio.NewReader(fbb)
+			pgoProf.FunctionsCounters, err = pgo.FromSerializedBb(rbb)
+			if err != nil {
+				return nil, fmt.Errorf("error processing serialized PGO profile: %w", err)
+			}
+		}
 	} else {
-		pgoProf, err = pgo.FromPProf(r)
+		pgoProf, err = pgo.FromPProf(r, base.Flag.PgoBb)
 		if err != nil {
 			return nil, fmt.Errorf("error processing pprof PGO profile: %w", err)
 		}
@@ -154,16 +166,14 @@ func New(profileFile string) (*Profile, error) {
 	// Create package-level call graph with weights from profile and IR.
 	wg := createIRGraph(pgoProf.NamedEdgeMap)
 
-	var fs *FuncSampleTable
-	if base.Flag.PgoBbProfile {
+	if base.Flag.PgoBb {
 		// Load and propagate counters for each AST node
-		fs = LoadCounters(pgoProf.PProf)
+		LoadCounters(pgoProf.FunctionsCounters)
 	}
 
 	return &Profile{
 		Profile:    pgoProf,
 		WeightedCG: wg,
-		Prof:       fs,
 	}, nil
 }
 

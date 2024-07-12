@@ -7,16 +7,15 @@ package test
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"internal/testenv"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"testing"
 )
 
 const bbProfFile = "bb_test.pprof"
-const bbProfPkg = "example.com/pgo/basic_blocks"
 
 type checkPair struct {
 	r *regexp.Regexp // Pattern to check the dump
@@ -35,12 +34,6 @@ var testIf1DumpPatterns = []*checkPair{
 	{regexp.MustCompile(`0 \..*BLOCK-List`), false},
 	// Check, that assign has zero counter
 	{regexp.MustCompile(`0 \..*AS tc\(1\) # bb_test.go`), false},
-
-	// Assembly checks
-	{regexp.MustCompile(`b1 \([1-9][0-9]+\).*PCDATA`), false},
-	{regexp.MustCompile(`b1 \([1-9][0-9]+\).*JNE`), false},
-	{regexp.MustCompile(`b3 \([1-9][0-9]+\).*RET`), false},
-	{regexp.MustCompile(`b2 \(0\).*RET`), false},
 }
 
 var testIf2DumpPatterns = []*checkPair{
@@ -53,12 +46,6 @@ var testIf2DumpPatterns = []*checkPair{
 	{regexp.MustCompile(`[1-9][0-9]* \..*RETURN tc\(1\) .*# bb_test.go`), false},
 	// Check, that assign has zero counter
 	{regexp.MustCompile(`[1-9][0-9]* \..*AS tc\(1\) # bb_test.go`), false},
-
-	// Assembly checks
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false},
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*(JCS|JCC)`), false},
-	{regexp.MustCompile(`b3 \([1-9][0-9]*\).*RET`), false},
-	{regexp.MustCompile(`b2 \([1-9][0-9]*\).*RET`), false},
 }
 
 var testFor1DumpPatterns = []*checkPair{
@@ -75,14 +62,6 @@ var testFor1DumpPatterns = []*checkPair{
 	{regexp.MustCompile(`0 \..*IF-Else`), false},
 	// Check, that return has non-zero counter
 	{regexp.MustCompile(`[1-9][0-9]* \..*RETURN.*# bb_test.go`), false},
-
-	// Assembly checks
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false},
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*JLS`), false},
-	{regexp.MustCompile(`b2 \([1-9][0-9]*\).*JLS`), false},
-	{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false},
-	{regexp.MustCompile(`b12 \(0\).*JMP`), false},
-	{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false},
 }
 
 var testFor2DumpPatterns = []*checkPair{
@@ -99,15 +78,6 @@ var testFor2DumpPatterns = []*checkPair{
 	{regexp.MustCompile(`0 \..*IF-Else`), false},
 	// Check, that return has non-zero counter
 	{regexp.MustCompile(`[1-9][0-9]* \..*RETURN.*# bb_test.go`), false},
-
-	// Assembly checks
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false},
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*JLS`), false},
-	{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false},
-	{regexp.MustCompile(`b6 \([1-9][0-9]*\).*JLE`), false},
-	{regexp.MustCompile(`b12 \(0\).*JMP`), false},
-	{regexp.MustCompile(`b16 \([1-9][0-9]*\).*JMP`), false},
-	{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false},
 }
 
 var testFor3DumpPatterns = []*checkPair{
@@ -124,15 +94,6 @@ var testFor3DumpPatterns = []*checkPair{
 	{regexp.MustCompile(`[1-9][0-9]* \..*IF-Else`), false},
 	// Check, that return has non-zero counter
 	{regexp.MustCompile(`[1-9][0-9]* \..*RETURN.*# bb_test.go`), false},
-
-	// Assembly checks
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false},
-	{regexp.MustCompile(`b1 \([1-9][0-9]*\).*JLS`), false},
-	{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false},
-	{regexp.MustCompile(`b6 \([1-9][0-9]*\).*JLE`), false},
-	{regexp.MustCompile(`b12 \([1-9][0-9]*\).*JMP`), false},
-	{regexp.MustCompile(`b16 \(0\).*JMP`), false},
-	{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false},
 }
 
 var testInline1DumpPatterns = []*checkPair{
@@ -141,24 +102,12 @@ var testInline1DumpPatterns = []*checkPair{
 	{regexp.MustCompile(`[1-9][0-9]* \..*AS tc\(1\).*bb_test.go:94`), false},
 	// Check, that assign in second branch has zero counter
 	{regexp.MustCompile(`0* \..*SUB.*bb_test.go:96`), false},
-
-	// Assembly checks
-	{regexp.MustCompile(`b12 \([1-9][0-9]*\).*JMP`), false},
-	{regexp.MustCompile(`b10 \(0\).*JMP`), false},
 }
 
-func buildBBPGOInliningTest(t *testing.T, dir, gcflag, dumpFunc string) []byte {
+func buildBBPGOInliningTest(t *testing.T, dir, pprof, dumpFunc string) []byte {
 	// Add a go.mod so we have a consistent symbol names in this temp dir.
-	/*	goMod := fmt.Sprintf(`module %s
-		go 1.19
-		`, bbProfPkg)
-
-			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0644); err != nil {
-				t.Fatalf("error writing go.mod: %v", err)
-			}*/
-
 	exe := filepath.Join(dir, "test.exe")
-	args := []string{"test", "-c", "-o", exe, "-gcflags=" + gcflag, "bb_test.go"}
+	args := []string{"test", "-a", "-c", "-o", exe, "-pgobb", "-pgo="+pprof,"bb_test.go"}
 	cmd := testenv.Command(t, testenv.GoToolPath(t), args...)
 	cmd.Dir = dir
 	cmd = testenv.CleanCmdEnv(cmd)
@@ -169,6 +118,88 @@ func buildBBPGOInliningTest(t *testing.T, dir, gcflag, dumpFunc string) []byte {
 		t.Fatalf("build failed: %v, output:\n%s", err, out)
 	}
 	return out
+}
+
+func init() {
+	// Assembly checks
+	testIf1DumpPatterns = append(testIf1DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]+\).*PCDATA`), false})
+	if runtime.GOARCH == "amd64" {
+		testIf1DumpPatterns = append(testIf1DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]+\).*JNE`), false})
+		testIf1DumpPatterns = append(testIf1DumpPatterns, &checkPair{regexp.MustCompile(`b3 \([1-9][0-9]+\).*RET`), false})
+		testIf1DumpPatterns = append(testIf1DumpPatterns, &checkPair{regexp.MustCompile(`b2 \(0\).*RET`), false})
+	} else if runtime.GOARCH == "arm64" {
+		testIf1DumpPatterns = append(testIf1DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]+\).*CBNZ`), false})
+		testIf1DumpPatterns = append(testIf1DumpPatterns, &checkPair{regexp.MustCompile(`b3 \([1-9][0-9]+\).*RET`), false})
+		testIf1DumpPatterns = append(testIf1DumpPatterns, &checkPair{regexp.MustCompile(`b2 \(0\).*RET`), false})
+	}
+
+	testIf2DumpPatterns = append(testIf2DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false})
+	if runtime.GOARCH == "amd64" {
+		testIf2DumpPatterns = append(testIf2DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*(JCS|JCC)`), false})
+		testIf2DumpPatterns = append(testIf2DumpPatterns, &checkPair{regexp.MustCompile(`b3 \([1-9][0-9]*\).*RET`), false})
+		testIf2DumpPatterns = append(testIf2DumpPatterns, &checkPair{regexp.MustCompile(`b2 \([1-9][0-9]*\).*RET`), false})
+	} else if runtime.GOARCH == "arm64" {
+		testIf2DumpPatterns = append(testIf2DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*(TBNZ|TBZ)`), false})
+		testIf2DumpPatterns = append(testIf2DumpPatterns, &checkPair{regexp.MustCompile(`b3 \([1-9][0-9]*\).*RET`), false})
+		testIf2DumpPatterns = append(testIf2DumpPatterns, &checkPair{regexp.MustCompile(`b2 \([1-9][0-9]*\).*RET`), false})
+	}
+
+	testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false})
+	if runtime.GOARCH == "amd64" {
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*JLS`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b2 \([1-9][0-9]*\).*JLS`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b12 \(0\).*JMP`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false})
+	} else if runtime.GOARCH == "arm64" {
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*BLS`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b2 \([1-9][0-9]*\).*BLS`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b12 \(0\).*JMP`), false})
+		testFor1DumpPatterns = append(testFor1DumpPatterns, &checkPair{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false})
+	}
+
+	testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false})
+	if runtime.GOARCH == "amd64" {
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*JLS`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b6 \([1-9][0-9]*\).*JLE`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b12 \(0\).*JMP`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b16 \([1-9][0-9]*\).*JMP`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false})
+	} else if runtime.GOARCH == "arm64" {
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*BLS`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b6 \([1-9][0-9]*\).*BLE`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b12 \(0\).*JMP`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b16 \([1-9][0-9]*\).*JMP`), false})
+		testFor2DumpPatterns = append(testFor2DumpPatterns, &checkPair{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false})
+	}
+
+	testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*PCDATA`), false})
+	if runtime.GOARCH == "amd64" {
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*JLS`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b6 \([1-9][0-9]*\).*JLE`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b12 \([1-9][0-9]*\).*JMP`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b16 \(0\).*JMP`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false})
+	} else if runtime.GOARCH == "arm64" {
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b1 \([1-9][0-9]*\).*BLS`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b4 \([1-9][0-9]*\).*JMP`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b6 \([1-9][0-9]*\).*BLE`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b12 \([1-9][0-9]*\).*JMP`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b16 \(0\).*JMP`), false})
+		testFor3DumpPatterns = append(testFor3DumpPatterns, &checkPair{regexp.MustCompile(`b9 \([1-9][0-9]*\).*RET`), false})
+	}
+
+	if runtime.GOARCH == "amd64" {
+		testInline1DumpPatterns = append(testInline1DumpPatterns, &checkPair{regexp.MustCompile(`b12 \([1-9][0-9]*\).*JMP`), false})
+		testInline1DumpPatterns = append(testInline1DumpPatterns, &checkPair{regexp.MustCompile(`b10 \(0\).*JMP`), false})
+	} else if runtime.GOARCH == "arm64" {
+		testInline1DumpPatterns = append(testInline1DumpPatterns, &checkPair{regexp.MustCompile(`b12 \([1-9][0-9]*\).*JMP`), false})
+		testInline1DumpPatterns = append(testInline1DumpPatterns, &checkPair{regexp.MustCompile(`b10 \(0\).*JMP`), false})
+	}
 }
 
 // checkBBPGODumps checks that function dump all the patterns from regExprs
@@ -200,6 +231,11 @@ func checkBBPGODumps(t *testing.T, out []byte, regExprs []*checkPair, funcName s
 // TestPGOBasicBlocks tests that compiler loads profile-guided information
 // into basic blocks correctly
 func TestPGOBasicBlocks(t *testing.T) {
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64"{
+		// Not implemented for other arches
+		return
+	}
+
 	testenv.MustHaveGoRun(t)
 
 	wd, err := os.Getwd()
@@ -228,25 +264,21 @@ func TestPGOBasicBlocks(t *testing.T) {
 		t.Fatalf("profile build failed: %v, output:\n%s", err, out)
 	}
 
-	// build with -trimpath so the source location (thus the hash)
-	// does not depend on the temporary directory path.
-	gcflag := fmt.Sprintf("-pgobbprofile -pgoprofile=%s -trimpath %s=>%s", pprof, dir, bbProfPkg)
-
-	out = buildBBPGOInliningTest(t, dir, gcflag, "testIf1")
+	out = buildBBPGOInliningTest(t, dir, pprof, "testIf1")
 	checkBBPGODumps(t, out, testIf1DumpPatterns, "testIf1")
 
-	out = buildBBPGOInliningTest(t, dir, gcflag, "testIf2")
+	out = buildBBPGOInliningTest(t, dir, pprof, "testIf2")
 	checkBBPGODumps(t, out, testIf2DumpPatterns, "testIf2")
 
-	out = buildBBPGOInliningTest(t, dir, gcflag, "testFor1")
+	out = buildBBPGOInliningTest(t, dir, pprof, "testFor1")
 	checkBBPGODumps(t, out, testFor1DumpPatterns, "testFor1")
 
-	out = buildBBPGOInliningTest(t, dir, gcflag, "testFor2")
+	out = buildBBPGOInliningTest(t, dir, pprof, "testFor2")
 	checkBBPGODumps(t, out, testFor2DumpPatterns, "testFor2")
 
-	out = buildBBPGOInliningTest(t, dir, gcflag, "testFor3")
+	out = buildBBPGOInliningTest(t, dir, pprof, "testFor3")
 	checkBBPGODumps(t, out, testFor3DumpPatterns, "testFor3")
 
-	out = buildBBPGOInliningTest(t, dir, gcflag, "testInline1")
+	out = buildBBPGOInliningTest(t, dir, pprof, "testInline1")
 	checkBBPGODumps(t, out, testInline1DumpPatterns, "testInline1")
 }

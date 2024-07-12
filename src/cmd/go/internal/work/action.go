@@ -476,6 +476,8 @@ func (b *Builder) pgoActionID(input string) cache.ActionID {
 type pgoActor struct {
 	// input is the path to the original pprof profile.
 	input string
+	// pgobb is the flag of enabling basic block pgo
+	pgobb bool
 }
 
 func (p *pgoActor) Act(b *Builder, ctx context.Context, a *Action) error {
@@ -489,9 +491,14 @@ func (p *pgoActor) Act(b *Builder, ctx context.Context, a *Action) error {
 	if err := sh.Mkdir(a.Objdir); err != nil {
 		return err
 	}
-
-	if err := sh.run(".", p.input, nil, cfg.BuildToolexec, base.Tool("preprofile"), "-o", a.Target, "-i", p.input); err != nil {
-		return err
+	if p.pgobb {
+		if err := sh.run(".", p.input, nil, cfg.BuildToolexec, base.Tool("preprofile"), "-pgobb", "-o", a.Target, "-i", p.input); err != nil {
+			return err
+		}
+	} else {
+		if err := sh.run(".", p.input, nil, cfg.BuildToolexec, base.Tool("preprofile"), "-o", a.Target, "-i", p.input); err != nil {
+			return err
+		}
 	}
 
 	// N.B. Builder.build looks for the out in a.built, regardless of
@@ -561,7 +568,8 @@ func (b *Builder) CompileAction(mode, depMode BuildMode, p *load.Package) *Actio
 			pgoAction := b.cacheAction("preprocess PGO profile "+p.Internal.PGOProfile, nil, func() *Action {
 				a := &Action{
 					Mode:   "preprocess PGO profile",
-					Actor:  &pgoActor{input: p.Internal.PGOProfile},
+					Actor:  &pgoActor{input: p.Internal.PGOProfile,
+							pgobb: p.Internal.PGObb},
 					Objdir: b.NewObjdir(),
 				}
 				a.Target = filepath.Join(a.Objdir, "pgo.preprofile")
