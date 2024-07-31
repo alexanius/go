@@ -133,7 +133,7 @@ func fmtNode(n Node, s fmt.State, verb rune) {
 	// %+v prints Dump.
 	// Otherwise we print Go syntax.
 	if s.Flag('+') && verb == 'v' {
-		dumpNode(s, n, 1)
+		dumpNode(s, n, 1, nil)
 		return
 	}
 
@@ -872,7 +872,7 @@ func ellipsisIf(b bool) string {
 func (l Nodes) Format(s fmt.State, verb rune) {
 	if s.Flag('+') && verb == 'v' {
 		// %+v is DumpList output
-		dumpNodes(s, l, 1)
+		dumpNodes(s, l, 1, nil)
 		return
 	}
 
@@ -904,20 +904,23 @@ func Dump(s string, n Node) {
 // DumpList prints the message s followed by a debug dump of each node in the list.
 func DumpList(s string, list Nodes) {
 	var buf bytes.Buffer
-	FDumpList(&buf, s, list)
+	FDumpList(&buf, s, list, nil)
 	os.Stdout.Write(buf.Bytes())
 }
 
 // FDumpList prints to w the message s followed by a debug dump of each node in the list.
-func FDumpList(w io.Writer, s string, list Nodes) {
+func FDumpList(w io.Writer, s string, list Nodes, f *Func) {
 	io.WriteString(w, s)
-	dumpNodes(w, list, 1)
+	dumpNodes(w, list, 1, f)
 	io.WriteString(w, "\n")
 }
 
 // indent prints indentation to w.
-func indent(w io.Writer, depth int) {
+func indent(w io.Writer, depth int, counter int64) {
 	fmt.Fprint(w, "\n")
+	if base.Flag.PgoBb {
+		fmt.Fprintf(w, "%d ", counter)
+	}
 	for i := 0; i < depth; i++ {
 		fmt.Fprint(w, ".   ")
 	}
@@ -1048,8 +1051,8 @@ func dumpNodeHeader(w io.Writer, n Node) {
 	}
 }
 
-func dumpNode(w io.Writer, n Node, depth int) {
-	indent(w, depth)
+func dumpNode(w io.Writer, n Node, depth int, f *Func) {
+	indent(w, depth, GetCounter(f, n))
 	if depth > 40 {
 		fmt.Fprint(w, "...")
 		return
@@ -1062,8 +1065,8 @@ func dumpNode(w io.Writer, n Node, depth int) {
 
 	if len(n.Init()) != 0 {
 		fmt.Fprintf(w, "%+v-init", n.Op())
-		dumpNodes(w, n.Init(), depth+1)
-		indent(w, depth)
+		dumpNodes(w, n.Init(), depth+1, f)
+		indent(w, depth, GetCounter(f, n))
 	}
 
 	switch n.Op() {
@@ -1116,23 +1119,23 @@ func dumpNode(w io.Writer, n Node, depth int) {
 		dumpNodeHeader(w, n)
 		fn := n
 		if len(fn.Dcl) > 0 {
-			indent(w, depth)
+			indent(w, depth, GetCounter(f, n))
 			fmt.Fprintf(w, "%+v-Dcl", n.Op())
 			for _, dcl := range n.Dcl {
-				dumpNode(w, dcl, depth+1)
+				dumpNode(w, dcl, depth+1, f)
 			}
 		}
 		if len(fn.ClosureVars) > 0 {
-			indent(w, depth)
+			indent(w, depth, GetCounter(f, n))
 			fmt.Fprintf(w, "%+v-ClosureVars", n.Op())
 			for _, cv := range fn.ClosureVars {
-				dumpNode(w, cv, depth+1)
+				dumpNode(w, cv, depth+1, f)
 			}
 		}
 		if len(fn.Body) > 0 {
-			indent(w, depth)
+			indent(w, depth, GetCounter(f, n))
 			fmt.Fprintf(w, "%+v-body", n.Op())
-			dumpNodes(w, fn.Body, depth+1)
+			dumpNodes(w, fn.Body, depth+1, f)
 		}
 		return
 	}
@@ -1164,30 +1167,34 @@ func dumpNode(w io.Writer, n Node, depth int) {
 		switch val := vf.Interface().(type) {
 		case Node:
 			if name != "" {
-				indent(w, depth)
+				indent(w, depth, GetCounter(f, n))
 				fmt.Fprintf(w, "%+v-%s", n.Op(), name)
 			}
-			dumpNode(w, val, depth+1)
+			dumpNode(w, val, depth+1, f)
 		case Nodes:
 			if len(val) == 0 {
 				continue
 			}
 			if name != "" {
-				indent(w, depth)
+				c := GetCounter(f, n)
+				if len(val) > 0 {
+					c = GetCounter(f, val[0])
+				}
+				indent(w, depth, c)
 				fmt.Fprintf(w, "%+v-%s", n.Op(), name)
 			}
-			dumpNodes(w, val, depth+1)
+			dumpNodes(w, val, depth+1, f)
 		default:
 			if vf.Kind() == reflect.Slice && vf.Type().Elem().Implements(nodeType) {
 				if vf.Len() == 0 {
 					continue
 				}
 				if name != "" {
-					indent(w, depth)
+					indent(w, depth, GetCounter(f, n))
 					fmt.Fprintf(w, "%+v-%s", n.Op(), name)
 				}
 				for i, n := 0, vf.Len(); i < n; i++ {
-					dumpNode(w, vf.Index(i).Interface().(Node), depth+1)
+					dumpNode(w, vf.Index(i).Interface().(Node), depth+1, f)
 				}
 			}
 		}
@@ -1196,13 +1203,13 @@ func dumpNode(w io.Writer, n Node, depth int) {
 
 var nodeType = reflect.TypeOf((*Node)(nil)).Elem()
 
-func dumpNodes(w io.Writer, list Nodes, depth int) {
+func dumpNodes(w io.Writer, list Nodes, depth int, f *Func) {
 	if len(list) == 0 {
 		fmt.Fprintf(w, " <nil>")
 		return
 	}
 
 	for _, n := range list {
-		dumpNode(w, n, depth)
+		dumpNode(w, n, depth, f)
 	}
 }

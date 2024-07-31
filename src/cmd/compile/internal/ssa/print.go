@@ -5,12 +5,12 @@
 package ssa
 
 import (
+	"cmd/compile/internal/base"
+	"cmd/internal/hash"
+	"cmd/internal/src"
 	"fmt"
 	"io"
 	"strings"
-
-	"cmd/internal/hash"
-	"cmd/internal/src"
 )
 
 func printFunc(f *Func) {
@@ -64,7 +64,11 @@ func (p stringFuncPrinter) startBlock(b *Block, reachable bool) {
 	if !p.printDead && !reachable {
 		return
 	}
-	fmt.Fprintf(p.w, "  b%d:", b.ID)
+	if base.Flag.PgoBb {
+		fmt.Fprintf(p.w, "  b%d: (%d)", b.ID, GetCounter(b.Func, b))
+	} else {
+		fmt.Fprintf(p.w, "  b%d:", b.ID)
+	}
 	if len(b.Preds) > 0 {
 		io.WriteString(p.w, " <-")
 		for _, e := range b.Preds {

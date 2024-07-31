@@ -12,6 +12,7 @@ import (
 	"cmd/internal/src"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -147,9 +148,72 @@ type Func struct {
 	// WasmImport is used by the //go:wasmimport directive to store info about
 	// a WebAssembly function import.
 	WasmImport *WasmImport
+
 	// WasmExport is used by the //go:wasmexport directive to store info about
 	// a WebAssembly function import.
 	WasmExport *WasmExport
+
+	ProfTable *NodeProfTable
+}
+
+// Counter The type of a counter in node
+type Counter = int64
+
+// counterIndex The type of index in the function counter table
+type counterIndex = string
+
+// NodeProfTable The type of a table with counters
+type NodeProfTable = sync.Map
+
+func cntIndex(pos src.XPos) string {
+	return fmt.Sprintf("%d:%d", base.Ctxt.PosTable.Pos(pos).FileIndex(), pos.Line())
+}
+
+// Set the counter c to the node n in the function fn
+func SetCounter(fn *Func, n Node, c Counter) {
+	if MayBeShared(n) {
+		return
+	}
+
+	idx := cntIndex(n.Pos())
+	t := fn.ProfTable
+	t.Store(idx, c)
+}
+
+// Get the counter c to the node n in the function fn
+func GetCounter(fn *Func, n Node) Counter {
+	if MayBeShared(n) {
+		return 0
+	}
+
+	if fn == nil || fn.ProfTable == nil {
+		// Possible if we get dumps for function without profile
+		return 0
+	}
+
+	idx := cntIndex(n.Pos())
+	t := fn.ProfTable
+	res, ok := t.Load(idx)
+	if ok {
+		return res.(Counter)
+	}
+	return 0
+}
+
+// Get the counter c to the node n in the function fn
+func GetCounterByPos(fn *Func, p src.XPos) Counter {
+	if fn == nil || fn.ProfTable == nil {
+		// Possible if we get dumps for function without profile
+		return 0
+	}
+
+	idx := cntIndex(p)
+	t := fn.ProfTable
+	res, ok := t.Load(idx)
+	if ok {
+		return res.(Counter)
+	}
+	return 0
 }
 
 // WasmImport stores metadata associated with the //go:wasmimport pragma.

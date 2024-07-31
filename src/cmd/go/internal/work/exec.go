@@ -875,7 +875,7 @@ OverlayLoop:
 
 	// Compile Go.
 	objpkg := objdir + "_pkg_.a"
-	ofile, out, err := BuildToolchain.gc(b, a, objpkg, icfg.Bytes(), embedcfg, symabis, len(sfiles) > 0, pgoProfile, gofiles)
+	ofile, out, err := BuildToolchain.gc(b, a, objpkg, icfg.Bytes(), embedcfg, symabis, len(sfiles) > 0, pgoProfile, p.Internal.PGObb, gofiles)
 	if err := sh.reportCmd("", "", out, err); err != nil {
 		return err
 	}
@@ -2018,7 +2018,7 @@ func mkAbs(dir, f string) string {
 type toolchain interface {
 	// gc runs the compiler in a specific directory on a set of files
 	// and returns the name of the generated output file.
-	gc(b *Builder, a *Action, archive string, importcfg, embedcfg []byte, symabis string, asmhdr bool, pgoProfile string, gofiles []string) (ofile string, out []byte, err error)
+	gc(b *Builder, a *Action, archive string, importcfg, embedcfg []byte, symabis string, asmhdr bool, pgoProfile string, pgobbProfile bool, gofiles []string) (ofile string, out []byte, err error)
 	// cc runs the toolchain's C compiler in a directory on a C file
 	// to produce an output file.
 	cc(b *Builder, a *Action, ofile, cfile string) error
@@ -2058,7 +2058,7 @@ func (noToolchain) linker() string {
 	return ""
 }
 
-func (noToolchain) gc(b *Builder, a *Action, archive string, importcfg, embedcfg []byte, symabis string, asmhdr bool, pgoProfile string, gofiles []string) (ofile string, out []byte, err error) {
+func (noToolchain) gc(b *Builder, a *Action, archive string, importcfg, embedcfg []byte, symabis string, asmhdr bool, pgoProfile string, pgobbProfile bool, gofiles []string) (ofile string, out []byte, err error) {
 	return "", nil, noCompiler()
 }
 
@@ -3208,7 +3208,7 @@ func (b *Builder) swigDoIntSize(objdir string) (intsize string, err error) {
 
 	p := load.GoFilesPackage(context.TODO(), load.PackageOpts{}, srcs)
 
-	if _, _, e := BuildToolchain.gc(b, &Action{Mode: "swigDoIntSize", Package: p, Objdir: objdir}, "", nil, nil, "", false, "", srcs); e != nil {
+	if _, _, e := BuildToolchain.gc(b, &Action{Mode: "swigDoIntSize", Package: p, Objdir: objdir}, "", nil, nil, "", false, "", false, srcs); e != nil {
 		return "32", nil
 	}
 	return "64", nil

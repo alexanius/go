@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	go tool preprofile [-V] [-o output] -i input
+//	go tool preprofile [-V] [-pgobb] [-o output] -i input
 package main
 
 import (
@@ -23,12 +23,13 @@ import (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: go tool preprofile [-V] [-o output] -i input\n\n")
+	fmt.Fprintf(os.Stderr, "usage: go tool preprofile [-V] [-pgobb] [-o output] -i input\n\n")
 	flag.PrintDefaults()
 	os.Exit(2)
 }
 
 var (
+	pgobb  = flag.Bool("pgobb", false, "generate pgobb basic block profile")
 	output = flag.String("o", "", "output file path")
 	input  = flag.String("i", "", "input pprof file path")
 )
@@ -41,12 +42,12 @@ func preprocess(profileFile string, outputFile string) error {
 	defer f.Close()
 
 	r := bufio.NewReader(f)
-	d, err := pgo.FromPProf(r)
+	d, err := pgo.FromPProf(r, *pgobb)
 	if err != nil {
 		return fmt.Errorf("error parsing profile: %w", err)
 	}
 
-	var out *os.File
+	var out, outbb *os.File
 	if outputFile == "" {
 		out = os.Stdout
 	} else {
@@ -55,11 +56,26 @@ func preprocess(profileFile string, outputFile string) error {
 			return fmt.Errorf("error creating output file: %w", err)
 		}
 		defer out.Close()
+
+		if *pgobb {
+			outbb, err = os.Create(outputFile + ".pgobb")
+			if err != nil {
+				return fmt.Errorf("error creating output file: %w", err)
+			}
+			defer outbb.Close()
+		}
 	}
 
 	w := bufio.NewWriter(out)
 	if _, err := d.WriteTo(w); err != nil {
 		return fmt.Errorf("error writing output file: %w", err)
+	}
+
+	if *pgobb {
+		w := bufio.NewWriter(outbb)
+		if _, err := d.WriteBbTo(w); err != nil {
+			return fmt.Errorf("error writing output file: %w", err)
+		}
 	}
 
 	return nil

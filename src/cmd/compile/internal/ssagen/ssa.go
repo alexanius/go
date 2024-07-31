@@ -22,6 +22,7 @@ import (
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/liveness"
 	"cmd/compile/internal/objw"
+	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/rttype"
 	"cmd/compile/internal/ssa"
@@ -336,7 +337,7 @@ func buildssa(fn *ir.Func, worker int, isPgoHot bool) *ssa.Func {
 	var astBuf *bytes.Buffer
 	if printssa {
 		astBuf = &bytes.Buffer{}
-		ir.FDumpList(astBuf, "buildssa-body", fn.Body)
+		ir.FDumpList(astBuf, "buildssa-body", fn.Body, fn)
 		if ssaDumpStdout {
 			fmt.Println("generating SSA for", name)
 			fmt.Print(astBuf.String())
@@ -605,6 +606,10 @@ func buildssa(fn *ir.Func, worker int, isPgoHot bool) *ssa.Func {
 	s.f.HTMLWriter.WritePhase("before insert phis", "before insert phis")
 
 	s.insertPhis()
+
+	if base.Flag.PgoBb {
+		pgoir.SetBBCounters(fn, s.f)
+	}
 
 	// Main call to ssa package to compile function
 	ssa.Compile(s.f)
@@ -6912,7 +6917,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			} else {
 				s = "   " // most value and branch strings are 2-3 characters long
 			}
-			f.Logf(" %-6s\t%.5d (%s)\t%s\n", s, p.Pc, p.InnermostLineNumber(), p.InstructionString())
+			f.Logf(" %-10s\t%.5d (%s)\t%s\n", s, p.Pc, p.InnermostLineNumber(), p.InstructionString())
 		}
 	}
 	if f.HTMLWriter != nil { // spew to ssa.html

@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"sort"
 )
 
 // Serialization of a Profile allows go tool preprofile to construct the edge
@@ -74,6 +75,57 @@ func (d *Profile) WriteTo(w io.Writer) (int64, error) {
 
 	// No need to serialize TotalWeight, it can be trivially recomputed
 	// during parsing.
+
+	return written, nil
+}
+
+// WriteBbTo writes a serialized representation of basic block profile to w.
+//
+// FromSerializedBb can parse the format back to Profile.
+//
+// WriteBbTo implements io.WriterTo.Write.
+func (d *Profile) WriteBbTo(w io.Writer) (int64, error) {
+	bw := bufio.NewWriter(w)
+
+	var written int64
+
+	n, err := bw.WriteString(serializationHeader)
+	written += int64(n)
+	if err != nil {
+		return written, err
+	}
+
+	if d.FunctionsCounters != nil {
+		fnNames := make([]string, 0, len(*d.FunctionsCounters))
+		for key := range *d.FunctionsCounters {
+			fnNames = append(fnNames, key)
+		}
+		sort.Strings(fnNames)
+
+		for _, fn := range fnNames {
+			fcc := (*d.FunctionsCounters)[fn]
+			n, err = fmt.Fprintf(bw, "func: %s\n", fn)
+			written += int64(n)
+
+			lines := make([]int64, 0, len(fcc))
+			for line := range fcc {
+				lines = append(lines, line)
+			}
+			sort.Slice(lines, func(i, j int) bool {
+				return lines[i] < lines[j]
+			})
+
+			for _, line := range lines {
+				counter := fcc[line]
+				n, err = fmt.Fprintf(bw, "%d %d\n", line, counter)
+				written += int64(n)
+			}
+		}
+	}
+
+	if err := bw.Flush(); err != nil {
+		return written, err
+	}
 
 	return written, nil
 }

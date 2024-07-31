@@ -16,7 +16,7 @@ import (
 )
 
 // FromPProf parses Profile from a pprof profile.
-func FromPProf(r io.Reader) (*Profile, error) {
+func FromPProf(r io.Reader, pgobb bool) (*Profile, error) {
 	p, err := profile.Parse(r)
 	if errors.Is(err, profile.ErrNoData) {
 		// Treat a completely empty file the same as a profile with no
@@ -59,9 +59,16 @@ func FromPProf(r io.Reader) (*Profile, error) {
 		return emptyProfile(), nil // accept but ignore profile with no samples.
 	}
 
+	var funcCounters *FunctionsCounters
+	if pgobb {
+		funcCounters = createFuncCounters(p)
+	}
+
 	return &Profile{
-		TotalWeight:  totalWeight,
-		NamedEdgeMap: namedEdgeMap,
+		PProf:             p,
+		TotalWeight:       totalWeight,
+		NamedEdgeMap:      namedEdgeMap,
+		FunctionsCounters: funcCounters,
 	}, nil
 }
 
@@ -137,4 +144,39 @@ func postProcessNamedEdgeMap(weight map[NamedCallEdge]int64, weightVal int64) (e
 	totalWeight = weightVal
 
 	return edgeMap, totalWeight, nil
+}
+
+func createFuncCounters(p *profile.Profile) *FunctionsCounters {
+	fc := make(FunctionsCounters)
+
+	valueIndex := -1
+	for i, s := range p.SampleType {
+		if s.Type == "cpu" && s.Unit == "nanoseconds" {
+			valueIndex = i
+			break
+		}
+	}
+	if valueIndex == -1 {
+		panic("Can not use pgobb witout cpu profile")
+	}
+
+	for _, s := range p.Sample {
+		lastLocIdx := len(s.Location)
+		if lastLocIdx == 0 {
+			continue
+		}
+
+		for _, loc := range s.Location {
+			for _, l := range loc.Line {
+				lc, ok := fc[l.Function.SystemName]
+				if !ok {
+					// This function is not seen inside this package
+					lc = make(LinesCounters)
+					fc[l.Function.SystemName] = lc
+				}
+				lc[l.Line] += s.Value[valueIndex]
+			}
+		}
+	}
+	return &fc
 }

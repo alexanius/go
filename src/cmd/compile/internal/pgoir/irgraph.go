@@ -132,28 +132,48 @@ func New(profileFile string) (*Profile, error) {
 		return nil, fmt.Errorf("error processing profile header: %w", err)
 	}
 
-	var base *pgo.Profile
+	var pgoProf *pgo.Profile
 	if isSerialized {
-		base, err = pgo.FromSerialized(r)
+		var rbb *bufio.Reader = nil
+		pgoProf, err = pgo.FromSerialized(r)
 		if err != nil {
 			return nil, fmt.Errorf("error processing serialized PGO profile: %w", err)
 		}
+
+		if base.Flag.PgoBb {
+			fbb, err := os.Open(profileFile + ".pgobb")
+			if err != nil {
+				return nil, fmt.Errorf("error opening profile: %w", err)
+			}
+			defer fbb.Close()
+
+			rbb = bufio.NewReader(fbb)
+			pgoProf.FunctionsCounters, err = pgo.FromSerializedBb(rbb)
+			if err != nil {
+				return nil, fmt.Errorf("error processing serialized PGO profile: %w", err)
+			}
+		}
 	} else {
-		base, err = pgo.FromPProf(r)
+		pgoProf, err = pgo.FromPProf(r, base.Flag.PgoBb)
 		if err != nil {
 			return nil, fmt.Errorf("error processing pprof PGO profile: %w", err)
 		}
 	}
 
-	if base.TotalWeight == 0 {
+	if pgoProf.TotalWeight == 0 {
 		return nil, nil // accept but ignore profile with no samples.
 	}
 
 	// Create package-level call graph with weights from profile and IR.
-	wg := createIRGraph(base.NamedEdgeMap)
+	wg := createIRGraph(pgoProf.NamedEdgeMap)
+
+	if base.Flag.PgoBb {
+		// Load and propagate counters for each AST node
+		LoadCounters(pgoProf.FunctionsCounters)
+	}
 
 	return &Profile{
-		Profile:    base,
+		Profile:    pgoProf,
 		WeightedCG: wg,
 	}, nil
 }
