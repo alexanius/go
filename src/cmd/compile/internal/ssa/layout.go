@@ -15,29 +15,31 @@ import (
 // After this phase returns, the order of f.Blocks matters and is the order
 // in which those blocks will appear in the assembly output.
 func layout(f *Func) {
-	if base.Flag.PGOBbExttsp /*&& profile != nil*/ {
+	f.Blocks = layoutOrder(f)
+}
 
-		// Sometimes the first block occurs not entry block. Fixing it
-		entryIndex := 0
-		for i, b := range f.Blocks {
-			if b == f.Entry {
-				entryIndex = i
-			}
-		}
-		if entryIndex != 0 {
-			f.Blocks[entryIndex] = f.Blocks[0]
-			f.Blocks[0] = f.Entry
-		}
+func layout2(f *Func) {
+	if !base.Flag.PGOBbExttsp {
+		return
+	}
 
-			if len(f.Blocks) < 10 {
-				f.Blocks = layoutTsp(f)
-			} else {
-//				f.Blocks = layoutOrder(f)
-				f.Blocks = layoutExttsp(f)
-			}
-		} else {
-			f.Blocks = layoutOrder(f)
+	// Sometimes the first block occurs not entry block. Fixing it
+	entryIndex := 0
+	for i, b := range f.Blocks {
+		if b == f.Entry {
+			entryIndex = i
 		}
+	}
+	if entryIndex != 0 {
+		f.Blocks[entryIndex] = f.Blocks[0]
+		f.Blocks[0] = f.Entry
+	}
+
+	if len(f.Blocks) < 10 {
+		f.Blocks = layoutTsp(f)
+	} else {
+		f.Blocks = layoutExttsp(f)
+	}
 }
 
 func layoutTsp(f *Func) []*Block {
@@ -271,6 +273,8 @@ func (C *Chain) clear() {
 	C.CBlocks = make([]*CBlock, 0)
 	C.CEdges = make([]ChainEdge, 0)
 }
+
+// used only in mergeChains
 func (C *Chain) mergCEdges(Other *Chain) {
 	for Idx := range Other.CEdges {
 		EdgeIt := &Other.CEdges[Idx]
@@ -298,6 +302,7 @@ func (C *Chain) mergCEdges(Other *Chain) {
 	}
 }
 func (C *Chain) merge(Other *Chain, MergedBlocks []*CBlock) {
+//println("Merge: ", (*C).Id, (*Other).Id) // NOCOMMIT
 	C.CBlocks = MergedBlocks
 	C.IsEntry = C.IsEntry || Other.IsEntry
 	C.ExecutionCount += Other.ExecutionCount
@@ -320,6 +325,7 @@ func (C *Chain) initialize(Id int, Bb *CBlock) {
 	C.Score = 0.0
 	C.CBlocks = make([]*CBlock, 0)
 	C.CBlocks = append(C.CBlocks, Bb)
+//println("Adding to Chain", (*C).Id, "BB", Bb.BB.ID) // NOCOMMIT
 }
 func (C *Chain) getEdge(Other *Chain) *CEdge {
 	for Idx := range C.CEdges {
@@ -633,6 +639,7 @@ func (E *ExtTSP) mergeFallthroughs() {
 			CurBlock := Bb
 			for CurBlock.FallthroughSucc != nil {
 				NextBlock := CurBlock.FallthroughSucc
+//println("mergeFallthroughs: ", (*Bb.CurChain).Id, (*NextBlock.CurChain).Id) // NOCOMMIT
 				E.mergeChains(Bb.CurChain, NextBlock.CurChain, 0, X_Y)
 				CurBlock = NextBlock
 			}
@@ -886,6 +893,7 @@ func (E *ExtTSP) mergeChainPairs() {
 			break
 		}
 		// Merge the best pair of chains
+//println("mergeChainPairs: ", (*BestChainPred).Id, (*BestChainSucc).Id) // NOCOMMIT
 		E.mergeChains(BestChainPred, BestChainSucc, BestGain.MergeOffset, BestGain.MergeType)
 	}
 }
@@ -906,6 +914,7 @@ func (E *ExtTSP) mergeColdChains() {
 			// the head of B. Here more conditions are added so that hot chain is expected to
 			// connects hot chain while the cold chain is connected with cold chain.
 			if SrcChain != DstChain && !DstChain.IsEntry && SrcChain.CBlocks[len(SrcChain.CBlocks)-1].Index == SrcIndex && DstChain.CBlocks[0].Index == DstIndex && ((SrcChain.ExecutionCount <= ColdThreshold && DstChain.ExecutionCount <= ColdThreshold) || (SrcChain.ExecutionCount > ColdThreshold && DstChain.ExecutionCount > ColdThreshold)) {
+//println("mergeColdChains: ", (*SrcChain).Id, (*DstChain).Id) // NOCOMMIT
 				E.mergeChains(SrcChain, DstChain, 0, X_Y)
 			}
 		}
@@ -925,7 +934,7 @@ func (E *ExtTSP) concatChains() []*Block {
 		C := &E.AllChains[Idx]
 		if len((*C).CBlocks) > 0 {
 			if E.f.pass.debug > 2 {
-				fmt.Printf("Chain:\n")
+				fmt.Printf("Chain %d:\n", (*C).Id)
 				for _, Bb := range (*C).CBlocks {
 					fmt.Printf("b%d %d\n", Bb.BB.ID, Bb.ExecutionCount)
 				}
@@ -957,7 +966,7 @@ func (E *ExtTSP) concatChains() []*Block {
 	Order := make([]*Block, 0, E.f.NumBlocks())
 	for _, C := range SortedChains {
 		if E.f.pass.debug > 2 {
-			fmt.Printf("Chain:\n")
+			fmt.Printf("Chain %d:\n", (*C).Id)
 			for _, Bb := range (*C).CBlocks {
 				fmt.Printf("b%d %d\n", Bb.BB.ID, Bb.ExecutionCount)
 			}
@@ -970,6 +979,9 @@ func (E *ExtTSP) concatChains() []*Block {
 }
 
 func (E *ExtTSP) run() []*Block {
+	if E.f.pass.debug > 2 {
+		fmt.Printf("Start layout for function: %s\n", E.f.Name)
+	}
 	E.initialize()
 	// Pass 1: Merge blocks with their fallthrough successors
 	E.mergeFallthroughs()
@@ -978,7 +990,11 @@ func (E *ExtTSP) run() []*Block {
 	// Pass 3: Merge cold blocks to reduce code size
 	E.mergeColdChains()
 	// Collect blocks from all chains
-	return E.concatChains()
+	res := E.concatChains()
+	if E.f.pass.debug > 2 {
+		fmt.Printf("Finish layout for function: %s\n", E.f.Name)
+	}
+	return res
 }
 
 func layoutExttsp(f *Func) []*Block {

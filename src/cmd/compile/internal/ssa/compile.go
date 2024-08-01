@@ -504,6 +504,7 @@ var passes = [...]pass{
 	{name: "schedule", fn: schedule, required: true}, // schedule values
 	{name: "late nilcheck", fn: nilcheckelim2},
 	{name: "flagalloc", fn: flagalloc, required: true}, // allocate flags register
+	{name: "layout2", fn: layout2, required: true},     // schedule blocks
 	{name: "regalloc", fn: regalloc, required: true},   // allocate int & float registers + stack slots
 	{name: "loop rotate", fn: loopRotate},
 	{name: "trim", fn: trim}, // remove empty blocks
