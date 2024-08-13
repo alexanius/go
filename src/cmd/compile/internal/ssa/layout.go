@@ -5,7 +5,6 @@
 package ssa
 
 import (
-//	"runtime/debug"
 	"cmd/compile/internal/base"
 	"fmt"
 	"math"
@@ -16,11 +15,289 @@ import (
 // After this phase returns, the order of f.Blocks matters and is the order
 // in which those blocks will appear in the assembly output.
 func layout(f *Func) {
-	f.Blocks = layoutOrder(f)
+	if base.Flag.PgoGreed {
+		f.Blocks = layoutGreed(f)
+	} else {
+		f.Blocks = layoutOrder(f)
+	}
 }
 
+//------------------------------------
+// Greedy Basic Block Layout
+//
+// This is an adaptation of Pettis & Hansen's greedy algorithm for laying out
+// basic blocks. See Profile Guided Code Positioning by Pettis & Hansen. The idea
+// is to arrange hot blocks near each other. Initially all blocks are belongs to
+// its own chain, then starting from hottest edge and repeatedly merge two proper
+// chains iff the edge dest is the first block of dest chain and edge src is the
+// last block of src chain. Once all edges are processed, the chains are sorted
+// by hottness and merge count and generate final block order. The algorithm is
+// summarized as follows:
+// 	- Initially every block is in its own chain.
+// 	- Sort edges by weight and move slow path to end.
+// 	- Merge proper chains until no more chains can be merged.
+// 	- Sort chains by hottness and priority.
+// 	- Generate final block order.
+// chain is a linear sequence of blocks, where the first block is the entry block
+// and the last block is the exit block. The chain is used to represent a sequence
+// of blocks that are likely to be executed together.
+func assert(cond bool, fx string, msg ...interface{}) {
+	if !cond {
+		panic(fmt.Sprintf(fx, msg...))
+	}
+}
+
+type chain struct {
+	id       ID
+	blocks   []*Block // ordered blocks in this chain
+	priority int      // merge count
+}
+func (c *chain) first() *Block {
+	return c.blocks[0]
+}
+func (c *chain) last() *Block {
+	return c.blocks[len(c.blocks)-1]
+}
+// edge simply represents a CFG edge
+type edge struct {
+	src    *Block
+	dst    *Block
+	weight int // frequency
+}
+const (
+	WeightTaken    = 100
+	WeightNotTaken = 0
+)
+func (e *edge) String() string {
+	return fmt.Sprintf("%v->%v(%d)", e.src, e.dst, e.weight)
+}
+// chainGraph is a directed graph of chains, where each chain is a sequence of
+// blocks, and each edge is a CFG edge with a weight. The graph is used to build
+// a block layout that minimizes control flow instructions.
+type chainGraph struct {
+	cid     idAlloc
+	chains  []*chain
+	edges   []*edge
+	b2chain []*chain // indexed by block id
+}
+func (g *chainGraph) newChain(block *Block) *chain {
+	c := &chain{g.cid.get(), []*Block{block}, 0 /*priority*/}
+	g.b2chain[block.ID] = c
+	g.chains = append(g.chains, c)
+	return c
+}
+func (g *chainGraph) getChain(b *Block) *chain {
+	return g.b2chain[b.ID]
+}
+// mergeChain merges the "from" chain into the "to" chain. The from chain is
+// removed then.
+func (g *chainGraph) mergeChain(from, to *chain) {
+	for _, block := range from.blocks {
+		g.b2chain[block.ID] = to
+	}
+	to.blocks = append(to.blocks, from.blocks...)
+to.priority++
+	g.chains[from.id-1 /*ID always >0*/] = nil
+}
+func (g *chainGraph) print() {
+	fmt.Printf("== Edges:\n")
+	for _, edge := range g.edges {
+		fmt.Printf("%v\n", edge)
+	}
+	fmt.Printf("== Chains:\n")
+	for _, ch := range g.chains {
+		if ch == nil {
+			continue
+		}
+		fmt.Printf("id:%d priority:%d blocks:%v\n", ch.id, ch.priority, ch.blocks)
+	}
+	fmt.Printf("== BlockOrder:\n")
+	blockOrder := make([]*Block, 0)
+	for _, chain := range g.chains {
+		blockOrder = append(blockOrder, chain.blocks...)
+	}
+	fmt.Printf("%v\n", blockOrder)
+}
+func newChainGraph(fn *Func) *chainGraph {
+	graph := &chainGraph{
+		chains:  []*chain{},
+		edges:   []*edge{},
+		b2chain: make([]*chain, fn.NumBlocks(), fn.NumBlocks()),
+	}
+	return graph
+}
+// isBefore returns true if block a is before block b in the block order. The
+// "before" precedence relation is transitive, i.e., if a is before b and b is
+// before c, then a is before c.
+func isBefore(before map[*chain][]*chain, visited map[*chain]bool, a, b *chain) bool {
+	if _, ok := visited[a]; ok {
+		return false
+	}
+	visited[a] = true
+	for _, c := range before[a] {
+		if c == b {
+			return true
+		}
+		if isBefore(before, visited, c, b) {
+			return true
+		}
+	}
+	return false
+}
+func layoutGreed(fn *Func) []*Block {
+	graph := newChainGraph(fn)
+	// Initially every block is in its own chain
+	for _, block := range fn.Blocks {
+		graph.newChain(block)
+		if len(block.Succs) == 1 {
+			if base.Flag.PgoBbGreed {
+				// We use basic block counters
+				graph.edges = append(graph.edges, &edge{block, block.Succs[0].b, int(GetCounter(fn, block.Succs[0].b))})
+			} else {
+				// Original algorithm
+				graph.edges = append(graph.edges, &edge{block, block.Succs[0].b, WeightTaken})
+			}
+		} else if len(block.Succs) == 2 && block.Likely != BranchUnknown {
+			// Static branch prediction is available
+			taken := 0
+			if block.Likely == BranchUnlikely {
+				taken = 1
+			}
+			var e1, e2 *edge
+			if base.Flag.PgoBbGreed {
+				// We use basic block counters
+				e1 = &edge{block, block.Succs[taken].b, int(GetCounter(fn, block.Succs[taken].b))}
+				e2 = &edge{block, block.Succs[1-taken].b, int(GetCounter(fn, block.Succs[1-taken].b))}
+			} else {
+				// Original algorithm
+				e1 = &edge{block, block.Succs[taken].b, WeightTaken}
+				e2 = &edge{block, block.Succs[1-taken].b, WeightNotTaken}
+			}
+			graph.edges = append(graph.edges, e1, e2)
+		} else {
+			// Block predication is unknown or there are more than 2 successors
+			for _, succ := range block.Succs {
+				e1 := &edge{block, succ.b, /*WeightTaken*/ int(GetCounter(fn, succ.b))}
+				graph.edges = append(graph.edges, e1)
+			}
+		}
+	}
+	// Sort edges by weight and move slow path to end
+	sort.SliceStable(graph.edges, func(i, j int) bool {
+		e1, e2 := graph.edges[i], graph.edges[j]
+		// Move slow path to end
+		if e1.weight == WeightNotTaken && e2.weight == WeightNotTaken {
+			return e1.dst.Kind != BlockExit && e2.dst.Kind == BlockExit
+		}
+		// If the weights are the same, then keep the original order, this
+		// ensures that adjacent edges are accessed sequentially, which has
+		// a noticeable impact on performance
+		return e1.weight > e2.weight
+	})
+	// Merge proper chains until no more chains can be merged
+	for _, edge := range graph.edges {
+		c1 := graph.getChain(edge.src)
+		c2 := graph.getChain(edge.dst)
+		if c1 == c2 {
+			continue
+		}
+		// [..c1..] edge [..c2..] ? Then merge c1 into c2 and remove entire c1 then
+		if edge.dst == c2.first() && edge.src == c1.last() {
+			if fn.pass.debug > 2 {
+				fmt.Printf("process %v merge %v to %v\n",
+					edge, c2.blocks, c1.blocks)
+			}
+			graph.mergeChain(c2, c1)
+		}
+	}
+	i := 0
+	for _, chain := range graph.chains {
+		// Remove nil chains because they are merge
+		if chain != nil {
+			graph.chains[i] = chain
+			if chain.first() == fn.Entry {
+				// Entry chain must be present at beginning
+				graph.chains[0], graph.chains[i] = graph.chains[i], graph.chains[0]
+			}
+			i++
+		}
+	}
+	graph.chains = graph.chains[:i]
+	// Reorder chains based by hottness and priority
+	before := make(map[*chain][]*chain)
+	for _, edge := range graph.edges {
+		// Compute the "before" precedence relation between chain, specifically,
+		// the chain that is taken is arranged before the chain that is not taken.
+		// This is because hardware prediction thought forward branch is less
+		// frequently taken, while backedge is more frequently taken.
+		if edge.weight == WeightNotTaken {
+			src := graph.getChain(edge.src)
+			dst := graph.getChain(edge.dst)
+			before[src] = append(before[src], dst)
+			if fn.pass.debug > 2 {
+				fmt.Printf("%v comes before %v\n", src.blocks, dst.blocks)
+			}
+		}
+	}
+	sort.SliceStable(graph.chains, func(i, j int) bool {
+		c1, c2 := graph.chains[i], graph.chains[j]
+		// Entry chain must be present at beginning
+		if c1.first() == fn.Entry {
+			return true
+		}
+		if c2.first() == fn.Entry {
+			return false
+		}
+		// Respect precedence relation
+		visited := make(map[*chain]bool)
+		if isBefore(before, visited, c1, c2) {
+			return true
+		}
+		if isBefore(before, visited, c2, c1) {
+			return false
+		}
+		// Higher merge count is considered
+		if c1.priority != c2.priority {
+			return c1.priority > c2.priority
+		}
+		// Keep adjacent chains close together
+		if c1.id > c2.id {
+			return false
+		}
+		// Non-terminated chain is considered
+		if s1, s2 := len(c1.last().Succs), len(c2.last().Succs); s1 != s2 {
+			return s1 > s2
+		}
+		// Keep original order if we can't decide
+		return false
+	})
+	assert(graph.chains[0].first() == fn.Entry, "entry chain must be first")
+	// Generate final block order
+	blockOrder := make([]*Block, 0)
+	for _, chain := range graph.chains {
+		blockOrder = append(blockOrder, chain.blocks...)
+	}
+	fn.laidout = true
+	if fn.pass.debug > 2 {
+		fmt.Printf("Block ordering(%v):\n", fn.Name)
+		graph.print()
+	}
+	if len(blockOrder) != len(fn.Blocks) {
+		graph.print()
+		fn.Fatalf("miss blocks in final order: %v %v", blockOrder, fn.Blocks)
+	}
+	if entryChain := graph.getChain(fn.Entry); entryChain != graph.chains[0] ||
+		entryChain.first() != fn.Entry {
+		graph.print()
+		fn.Fatalf("entry block is not first block")
+	}
+	return blockOrder
+}
+//------------------------------------
+
+// NOTE currently the ExtTsp layout can not be run as standard layout pass because of regalloc and schedule errors
 func layout2(f *Func) {
-	if !base.Flag.PGOBbExttsp {
+	if !base.Flag.PgoBbExttsp {
 		return
 	}
 
@@ -307,7 +584,6 @@ func (C *Chain) mergCEdges(Other *Chain) {
 	}
 }
 func (C *Chain) merge(Other *Chain, MergedBlocks []*CBlock) {
-//println("Merge: ", (*C).Id, (*Other).Id) // NOCOMMIT
 	C.CBlocks = MergedBlocks
 	C.IsEntry = C.IsEntry || Other.IsEntry
 	C.ExecutionCount += Other.ExecutionCount
@@ -330,7 +606,6 @@ func (C *Chain) initialize(Id int, Bb *CBlock) {
 	C.Score = 0.0
 	C.CBlocks = make([]*CBlock, 0)
 	C.CBlocks = append(C.CBlocks, Bb)
-//println("Adding to Chain", (*C).Id, "BB", Bb.BB.ID) // NOCOMMIT
 }
 func (C *Chain) getEdge(Other *Chain) *CEdge {
 	for Idx := range C.CEdges {
@@ -353,10 +628,6 @@ func (J *JumpList) initialize(SrcBlock *CBlock, DstBlock *CBlock, EC uint64) {
 	J.B1 = SrcBlock
 	J.B2 = DstBlock
 	J.V = EC
-/*if SrcBlock.BB.ID == 45 && DstBlock.BB.ID == 49 {
-debug.PrintStack()
-}
-fmt.Printf("initialize b%d b%d %d\n", SrcBlock.BB.ID, DstBlock.BB.ID, EC)*/ // NOCOMMIT
 }
 // An edge in CFG reprsenting jumps between chains of BasicBlocks.
 // When blocks are merged into chains, the edges are combined too so that
@@ -649,7 +920,6 @@ func (E *ExtTSP) mergeFallthroughs() {
 			CurBlock := Bb
 			for CurBlock.FallthroughSucc != nil {
 				NextBlock := CurBlock.FallthroughSucc
-//println("mergeFallthroughs: ", (*Bb.CurChain).Id, (*NextBlock.CurChain).Id) // NOCOMMIT
 				E.mergeChains(Bb.CurChain, NextBlock.CurChain, 0, X_Y)
 				CurBlock = NextBlock
 			}
@@ -903,7 +1173,6 @@ func (E *ExtTSP) mergeChainPairs() {
 			break
 		}
 		// Merge the best pair of chains
-//println("mergeChainPairs: ", (*BestChainPred).Id, (*BestChainSucc).Id) // NOCOMMIT
 		E.mergeChains(BestChainPred, BestChainSucc, BestGain.MergeOffset, BestGain.MergeType)
 	}
 }
@@ -924,7 +1193,6 @@ func (E *ExtTSP) mergeColdChains() {
 			// the head of B. Here more conditions are added so that hot chain is expected to
 			// connects hot chain while the cold chain is connected with cold chain.
 			if SrcChain != DstChain && !DstChain.IsEntry && SrcChain.CBlocks[len(SrcChain.CBlocks)-1].Index == SrcIndex && DstChain.CBlocks[0].Index == DstIndex && ((SrcChain.ExecutionCount <= ColdThreshold && DstChain.ExecutionCount <= ColdThreshold) || (SrcChain.ExecutionCount > ColdThreshold && DstChain.ExecutionCount > ColdThreshold)) {
-//println("mergeColdChains: ", (*SrcChain).Id, (*DstChain).Id) // NOCOMMIT
 				E.mergeChains(SrcChain, DstChain, 0, X_Y)
 			}
 		}

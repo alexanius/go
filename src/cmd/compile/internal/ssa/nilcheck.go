@@ -47,8 +47,9 @@ func nilcheckelim(f *Func) {
 	nonNilValues := f.Cache.allocValueSlice(f.NumValues())
 	defer f.Cache.freeValueSlice(nonNilValues)
 
+	visitOrder := layoutOrder(f)
 	// make an initial pass identifying any non-nil values
-	for _, b := range f.Blocks {
+	for _, b := range visitOrder {
 		for _, v := range b.Values {
 			// a value resulting from taking the address of a
 			// value, or a value constructed from an offset of a
@@ -64,7 +65,7 @@ func nilcheckelim(f *Func) {
 
 	for changed := true; changed; {
 		changed = false
-		for _, b := range f.Blocks {
+		for _, b := range visitOrder {
 			for _, v := range b.Values {
 				// phis whose arguments are all non-nil
 				// are non-nil
@@ -202,7 +203,8 @@ func nilcheckelim2(f *Func) {
 
 	pendingLines := f.cachedLineStarts // Holds statement boundaries that need to be moved to a new value/block
 
-	for _, b := range f.Blocks {
+	visitOrder := layoutOrder(f)
+	for _, b := range visitOrder {
 		// Walk the block backwards. Find instructions that will fault if their
 		// input pointer is nil. Remove nil checks on those pointers, as the
 		// faulting instruction effectively does the nil check for free.

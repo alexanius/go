@@ -175,7 +175,7 @@ func SetCounter(fn *Func, n Node, c Counter) {
 	t := fn.ProfTable
 	if t == nil {
 		// TODO why
-		return
+		panic("Nil prof table")
 	}
 	t[idx] = c
 }

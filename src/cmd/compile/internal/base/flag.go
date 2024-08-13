@@ -127,7 +127,9 @@ type CmdFlags struct {
 	WB                 bool         "help:\"enable write barrier\"" // TODO: remove
 	PgoProfile         string       "help:\"read profile or pre-process profile from `file`\""
 	PgoBb              bool         "help:\"use basic block counters in pgo mode\""
-	PGOBbExttsp        bool         "help:\"use ext-tsp algorithm for basic block reordering\""
+	PgoBbExttsp        bool         "help:\"use ext-tsp algorithm for basic block reordering\""
+	PgoGreed           bool         "help:\"use Pettis & Hansen's greedy algorithm algorithm for basic block reordering\""
+	PgoBbGreed         bool         "help:\"use Pettis & Hansen's greedy algorithm algorithm and pgobb for basic block reordering\""
 	ErrorURL           bool         "help:\"print explanatory URL with error message if applicable\""
 
 	// Configuration derived from flags; not a flag itself.
