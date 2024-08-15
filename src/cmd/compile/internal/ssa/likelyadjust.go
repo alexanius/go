@@ -114,6 +114,21 @@ func likelyadjust(f *Func) {
 	b2l := nest.b2l
 
 	for _, b := range po {
+		if base.Flag.PgoBb &&
+			f.ProfTable != nil &&
+			len(b.Preds) == 1 &&
+			len(b.Succs) == 1 {
+			if len(b.Preds[0].b.Succs) == 1 {
+				SetCounter(f, b, GetCounter(f, b.Preds[0].b))
+			} else if len(b.Preds[0].b.Succs) == 2 {
+				c := GetCounter(f, b.Preds[0].b.Succs[0].b) - GetCounter(f, b.Preds[0].b.Succs[1].b)
+				if c < 0 {
+					c = -c
+				}
+				SetCounter(f, b, c)
+			}
+		}
+
 		usedPgo := false
 		switch b.Kind {
 		case BlockExit:
