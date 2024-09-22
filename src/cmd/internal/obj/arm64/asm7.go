@@ -35,6 +35,7 @@ import (
 	"cmd/internal/objabi"
 	"encoding/binary"
 	"fmt"
+	"internal/buildcfg"
 	"log"
 	"math"
 	"slices"
@@ -60,9 +61,15 @@ type ctxt7 struct {
 	}
 }
 
-const (
+var (
 	funcAlign = 16
 )
+
+func init() {
+	if buildcfg.GOARM64.FuncAlign32 {
+		funcAlign = 32
+	}
+}
 
 const (
 	REGFROM = 1

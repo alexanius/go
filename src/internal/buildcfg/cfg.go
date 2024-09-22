@@ -179,6 +179,8 @@ type Goarm64Features struct {
 	// * FEAT_SHA1, which includes the SHA1* instructions.
 	// * FEAT_SHA256, which includes the SHA256* instructions.
 	Crypto bool
+	// Align all functions to 32-bytes
+	FuncAlign32 bool
 }
 
 func (g Goarm64Features) String() string {
@@ -189,17 +191,22 @@ func (g Goarm64Features) String() string {
 	if g.Crypto {
 		arm64Str += ",crypto"
 	}
+	if g.FuncAlign32 {
+		arm64Str += ",func_align_32"
+	}
 	return arm64Str
 }
 
 func ParseGoarm64(v string) (g Goarm64Features, e error) {
 	const (
-		lseOpt    = ",lse"
-		cryptoOpt = ",crypto"
+		lseOpt            = ",lse"
+		cryptoOpt         = ",crypto"
+		func_align_32_Opt = ",func_align_32"
 	)
 
 	g.LSE = false
 	g.Crypto = false
+	g.FuncAlign32 = false
 	// We allow any combination of suffixes, in any order
 	for {
 		if strings.HasSuffix(v, lseOpt) {
@@ -211,6 +218,12 @@ func ParseGoarm64(v string) (g Goarm64Features, e error) {
 		if strings.HasSuffix(v, cryptoOpt) {
 			g.Crypto = true
 			v = v[:len(v)-len(cryptoOpt)]
+			continue
+		}
+
+		if strings.HasSuffix(v, func_align_32_Opt) {
+			g.FuncAlign32 = true
+			v = v[:len(v)-len(func_align_32_Opt)]
 			continue
 		}
 

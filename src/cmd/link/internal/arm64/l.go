@@ -30,6 +30,10 @@
 
 package arm64
 
+import (
+	"internal/buildcfg"
+)
+
 // Writing object files.
 
 // cmd/9l/l.h from Vita Nuova.
@@ -62,9 +66,8 @@ package arm64
 // THE SOFTWARE.
 
 const (
-	maxAlign  = 32 // max data alignment
-	minAlign  = 1  // min data alignment
-	funcAlign = 16
+	maxAlign = 32 // max data alignment
+	minAlign = 1  // min data alignment
 )
 
 /* Used by ../internal/ld/dwarf.go */
@@ -72,3 +75,13 @@ const (
 	dwarfRegSP = 31
 	dwarfRegLR = 30
 )
+
+var (
+	funcAlign = 16
+)
+
+func init() {
+	if buildcfg.GOARM64.FuncAlign32 {
+		funcAlign = 32
+	}
+}
