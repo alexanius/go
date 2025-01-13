@@ -779,6 +779,20 @@ var optab = []Optab{
 	{ASTP, C_PAIR, C_NONE, C_NONE, C_LOREGPOOL, C_NONE, 77, 12, 0, LTO, 0},
 	{ASTP, C_PAIR, C_NONE, C_NONE, C_ADDR, C_NONE, 87, 12, 0, 0, 0},
 
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_NPAUTO, C_NONE, 67, 4, REGSP, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_PPAUTO, C_NONE, 67, 4, REGSP, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_UAUTO4K, C_NONE, 76, 8, REGSP, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_NAUTO4K, C_NONE, 76, 8, REGSP, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_LAUTO, C_NONE, 77, 12, REGSP, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_LAUTOPOOL, C_NONE, 77, 12, REGSP, LTO, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_NPOREG, C_NONE, 67, 4, 0, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_PPOREG, C_NONE, 67, 4, 0, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_UOREG4K, C_NONE, 76, 8, 0, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_NOREG4K, C_NONE, 76, 8, 0, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_LOREG, C_NONE, 77, 12, 0, 0, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_LOREGPOOL, C_NONE, 77, 12, 0, LTO, 0},
+	{ASTNP, C_PAIR, C_NONE, C_NONE, C_ADDR, C_NONE, 87, 12, 0, 0, 0},
+
 	// differ from LDP/STP for C_NSAUTO_4/C_PSAUTO_4/C_NSOREG_4/C_PSOREG_4
 	{ALDPW, C_NSAUTO_4, C_NONE, C_NONE, C_PAIR, C_NONE, 66, 4, REGSP, 0, 0},
 	{ALDPW, C_PSAUTO_4, C_NONE, C_NONE, C_PAIR, C_NONE, 66, 4, REGSP, 0, 0},
@@ -1532,7 +1546,7 @@ func isNEGop(op obj.As) bool {
 
 func isLoadStorePairOp(op obj.As) bool {
 	switch op {
-	case AFLDPQ, AFSTPQ, ALDP, ASTP, ALDPW, ASTPW:
+	case AFLDPQ, AFSTPQ, ALDP, ASTP, ASTNP, ALDPW, ASTPW:
 		return true
 	}
 	return false
@@ -3047,7 +3061,7 @@ func buildop(ctxt *obj.Link) {
 		case ALDP:
 			oprangeset(AFLDPD, t)
 
-		case ASTP:
+		case ASTP, ASTNP:
 			oprangeset(AFSTPD, t)
 
 		case ASTPW:
@@ -7732,7 +7746,7 @@ func (c *ctxt7) opldpstp(p *obj.Prog, o *Optab, vo int32, rbase, rl, rh int16, l
 	switch p.As {
 	case ALDP, ALDPW, ALDPSW:
 		c.checkUnpredictable(p, true, wback, p.From.Reg, p.To.Reg, int16(p.To.Offset))
-	case ASTP, ASTPW:
+	case ASTP, ASTNP, ASTPW:
 		if wback {
 			c.checkUnpredictable(p, false, true, p.To.Reg, p.From.Reg, int16(p.From.Offset))
 		}
@@ -7760,7 +7774,7 @@ func (c *ctxt7) opldpstp(p *obj.Prog, o *Optab, vo int32, rbase, rl, rh int16, l
 		}
 		vo /= 4
 		ret = 1 << 26
-	case ALDP, ASTP:
+	case ALDP, ASTP, ASTNP:
 		if vo < -512 || vo > 504 || vo%8 != 0 {
 			c.ctxt.Diag("invalid offset %v\n", p)
 		}
@@ -7791,19 +7805,21 @@ func (c *ctxt7) opldpstp(p *obj.Prog, o *Optab, vo int32, rbase, rl, rh int16, l
 		if rl < REG_R0 || REG_R31 < rl || rh < REG_R0 || REG_R31 < rh {
 			c.ctxt.Diag("invalid register pair %v\n", p)
 		}
-	case ASTP, ASTPW:
+	case ASTP, ASTNP, ASTPW:
 		if rl < REG_R0 || REG_R31 < rl || rh < REG_R0 || REG_R31 < rh {
 			c.ctxt.Diag("invalid register pair %v\n", p)
 		}
 	}
 	// other conditional flag bits
+	if p.As != ASTNP {
 	switch o.scond {
-	case C_XPOST:
-		ret |= 1 << 23
-	case C_XPRE:
-		ret |= 3 << 23
-	default:
-		ret |= 2 << 23
+		case C_XPOST:
+			ret |= 1 << 23
+		case C_XPRE:
+			ret |= 3 << 23
+		default:
+			ret |= 2 << 23
+		}
 	}
 	ret |= 5<<27 | (ldp&1)<<22 | uint32(vo&0x7f)<<15 | uint32(rh&31)<<10 | uint32(rbase&31)<<5 | uint32(rl&31)
 	return ret

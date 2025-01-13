@@ -1086,25 +1086,51 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Sym = ir.Syms.Duffzero
 		p.To.Offset = v.AuxInt
 	case ssa.OpARM64LoweredZero:
-		// STP.P	(ZR,ZR), 16(R16)
-		// CMP	Rarg1, R16
-		// BLE	-2(PC)
-		// arg1 is the address of the last 16-byte unit to zero
-		p := s.Prog(arm64.ASTP)
-		p.Scond = arm64.C_XPOST
-		p.From.Type = obj.TYPE_REGREG
-		p.From.Reg = arm64.REGZERO
-		p.From.Offset = int64(arm64.REGZERO)
-		p.To.Type = obj.TYPE_MEM
-		p.To.Reg = arm64.REG_R16
-		p.To.Offset = 16
-		p2 := s.Prog(arm64.ACMP)
-		p2.From.Type = obj.TYPE_REG
-		p2.From.Reg = v.Args[1].Reg()
-		p2.Reg = arm64.REG_R16
-		p3 := s.Prog(arm64.ABLE)
-		p3.To.Type = obj.TYPE_BRANCH
-		p3.To.SetTarget(p)
+		if !base.Flag.Stnp {
+			// STP.P	(ZR,ZR), 16(R16)
+			// CMP	Rarg1, R16
+			// BLE	-2(PC)
+			// arg1 is the address of the last 16-byte unit to zero
+			p := s.Prog(arm64.ASTP)
+			p.Scond = arm64.C_XPOST
+			p.From.Type = obj.TYPE_REGREG
+			p.From.Reg = arm64.REGZERO
+			p.From.Offset = int64(arm64.REGZERO)
+			p.To.Type = obj.TYPE_MEM
+			p.To.Reg = arm64.REG_R16
+			p.To.Offset = 16
+			p2 := s.Prog(arm64.ACMP)
+			p2.From.Type = obj.TYPE_REG
+			p2.From.Reg = v.Args[1].Reg()
+			p2.Reg = arm64.REG_R16
+			p3 := s.Prog(arm64.ABLE)
+			p3.To.Type = obj.TYPE_BRANCH
+			p3.To.SetTarget(p)
+		} else {
+			// STPNP	(ZR,ZR), (R16)
+			// ADD R16, R16, 16
+			// CMP	Rarg1, R16
+			// BLE	-3(PC)
+			// arg1 is the address of the last 16-byte unit to zero
+			p := s.Prog(arm64.ASTNP)
+			p.From.Type = obj.TYPE_REGREG
+			p.From.Reg = arm64.REGZERO
+			p.From.Offset = int64(arm64.REGZERO)
+			p.To.Type = obj.TYPE_MEM
+			p.To.Reg = arm64.REG_R16
+			p2 := s.Prog(arm64.AADD)
+			p2.From.Type = obj.TYPE_CONST
+			p2.From.Offset = 16
+			p2.To.Type = obj.TYPE_REG
+			p2.To.Reg = arm64.REG_R16
+			p3 := s.Prog(arm64.ACMP)
+			p3.From.Type = obj.TYPE_REG
+			p3.From.Reg = v.Args[1].Reg()
+			p3.Reg = arm64.REG_R16
+			p4 := s.Prog(arm64.ABLE)
+			p4.To.Type = obj.TYPE_BRANCH
+			p4.To.SetTarget(p)
+		}
 	case ssa.OpARM64DUFFCOPY:
 		p := s.Prog(obj.ADUFFCOPY)
 		p.To.Type = obj.TYPE_MEM
@@ -1112,34 +1138,69 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Sym = ir.Syms.Duffcopy
 		p.To.Offset = v.AuxInt
 	case ssa.OpARM64LoweredMove:
-		// LDP.P	16(R16), (R25, Rtmp)
-		// STP.P	(R25, Rtmp), 16(R17)
-		// CMP	Rarg2, R16
-		// BLE	-3(PC)
-		// arg2 is the address of the last element of src
-		p := s.Prog(arm64.ALDP)
-		p.Scond = arm64.C_XPOST
-		p.From.Type = obj.TYPE_MEM
-		p.From.Reg = arm64.REG_R16
-		p.From.Offset = 16
-		p.To.Type = obj.TYPE_REGREG
-		p.To.Reg = arm64.REG_R25
-		p.To.Offset = int64(arm64.REGTMP)
-		p2 := s.Prog(arm64.ASTP)
-		p2.Scond = arm64.C_XPOST
-		p2.From.Type = obj.TYPE_REGREG
-		p2.From.Reg = arm64.REG_R25
-		p2.From.Offset = int64(arm64.REGTMP)
-		p2.To.Type = obj.TYPE_MEM
-		p2.To.Reg = arm64.REG_R17
-		p2.To.Offset = 16
-		p3 := s.Prog(arm64.ACMP)
-		p3.From.Type = obj.TYPE_REG
-		p3.From.Reg = v.Args[2].Reg()
-		p3.Reg = arm64.REG_R16
-		p4 := s.Prog(arm64.ABLE)
-		p4.To.Type = obj.TYPE_BRANCH
-		p4.To.SetTarget(p)
+		if !base.Flag.Stnp {
+			// LDP.P	16(R16), (R25, Rtmp)
+			// STP.P	(R25, Rtmp), 16(R17)
+			// CMP	Rarg2, R16
+			// BLE	-3(PC)
+			// arg2 is the address of the last element of src
+			p := s.Prog(arm64.ALDP)
+			p.Scond = arm64.C_XPOST
+			p.From.Type = obj.TYPE_MEM
+			p.From.Reg = arm64.REG_R16
+			p.From.Offset = 16
+			p.To.Type = obj.TYPE_REGREG
+			p.To.Reg = arm64.REG_R25
+			p.To.Offset = int64(arm64.REGTMP)
+			p2 := s.Prog(arm64.ASTP)
+			p2.Scond = arm64.C_XPOST
+			p2.From.Type = obj.TYPE_REGREG
+			p2.From.Reg = arm64.REG_R25
+			p2.From.Offset = int64(arm64.REGTMP)
+			p2.To.Type = obj.TYPE_MEM
+			p2.To.Reg = arm64.REG_R17
+			p2.To.Offset = 16
+			p3 := s.Prog(arm64.ACMP)
+			p3.From.Type = obj.TYPE_REG
+			p3.From.Reg = v.Args[2].Reg()
+			p3.Reg = arm64.REG_R16
+			p4 := s.Prog(arm64.ABLE)
+			p4.To.Type = obj.TYPE_BRANCH
+			p4.To.SetTarget(p)
+		} else {
+			// LDP.P	16(R16), (R25, Rtmp)
+			// STNP		(R25, Rtmp), (R17)
+			// ADD		R17, R17, 16
+			// CMP	Rarg2, R16
+			// BLE	-4(PC)
+			// arg2 is the address of the last element of src
+			p := s.Prog(arm64.ALDP)
+			p.Scond = arm64.C_XPOST
+			p.From.Type = obj.TYPE_MEM
+			p.From.Reg = arm64.REG_R16
+			p.From.Offset = 16
+			p.To.Type = obj.TYPE_REGREG
+			p.To.Reg = arm64.REG_R25
+			p.To.Offset = int64(arm64.REGTMP)
+			p2 := s.Prog(arm64.ASTNP)
+			p2.From.Type = obj.TYPE_REGREG
+			p2.From.Reg = arm64.REG_R25
+			p2.From.Offset = int64(arm64.REGTMP)
+			p2.To.Type = obj.TYPE_MEM
+			p2.To.Reg = arm64.REG_R17
+			p3 := s.Prog(arm64.AADD)
+			p3.From.Type = obj.TYPE_CONST
+			p3.From.Offset = 16
+			p3.To.Type = obj.TYPE_REG
+			p3.To.Reg = arm64.REG_R17
+			p4 := s.Prog(arm64.ACMP)
+			p4.From.Type = obj.TYPE_REG
+			p4.From.Reg = v.Args[2].Reg()
+			p4.Reg = arm64.REG_R16
+			p5 := s.Prog(arm64.ABLE)
+			p5.To.Type = obj.TYPE_BRANCH
+			p5.To.SetTarget(p)
+		}
 	case ssa.OpARM64CALLstatic, ssa.OpARM64CALLclosure, ssa.OpARM64CALLinter:
 		s.Call(v)
 	case ssa.OpARM64CALLtail:

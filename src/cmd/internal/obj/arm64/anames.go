@@ -402,6 +402,7 @@ var Anames = []string{
 	"STLXRH",
 	"STLXRW",
 	"STP",
+	"STNP",
 	"STPW",
 	"STXP",
 	"STXPW",

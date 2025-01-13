@@ -126,6 +126,7 @@ type CmdFlags struct {
 	TrimPath           string       "help:\"remove `prefix` from recorded source file paths\""
 	WB                 bool         "help:\"enable write barrier\"" // TODO: remove
 	PgoProfile         string       "help:\"read profile or pre-process profile from `file`\""
+	Stnp               bool         "help:\"use stnp instruction in lowered zero/move\""
 	ErrorURL           bool         "help:\"print explanatory URL with error message if applicable\""
 
 	// Configuration derived from flags; not a flag itself.
