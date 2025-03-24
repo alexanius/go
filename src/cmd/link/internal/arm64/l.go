@@ -31,7 +31,7 @@
 package arm64
 
 import (
-	"internal/buildcfg"
+	"cmd/link/internal/ld"
 )
 
 // Writing object files.
@@ -77,11 +77,12 @@ const (
 )
 
 var (
-	funcAlign = 16
+	funcAlign = 32
 )
 
 func init() {
-	if buildcfg.GOARM64.FuncAlign32 {
-		funcAlign = 32
+	funcAlign = *ld.FlagFuncAlign
+	if funcAlign < minAlign || funcAlign > maxAlign {
+		ld.Exitf("invalid function align %d (-funcalign). Should be in range [%d; %d]", funcAlign, minAlign, maxAlign)
 	}
 }

@@ -1,3 +1,7 @@
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 // Test GOARM64 func_align_32 functions alignment option
 
 package test
@@ -89,7 +93,7 @@ func TestFuncAlign(t *testing.T) {
 	testFuncAlignment(t, dir, "main.baz", 16)
 
 	dir = t.TempDir()
-	buildFuncAlignmentTest(t, dir, "v8.0,func_align_32")
+	buildFuncAlignmentTest(t, dir, "v8.0")
 	testFuncAlignment(t, dir, "main.asm_foo", 32)
 	testFuncAlignment(t, dir, "main.asm_bar", 32)
 	testFuncAlignment(t, dir, "main.asm_baz", 32)
