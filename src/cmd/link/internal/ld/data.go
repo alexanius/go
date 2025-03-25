@@ -2728,7 +2728,6 @@ func assignAddress(ctxt *Link, sect *sym.Section, n int, s loader.Sym, va uint64
 
 				ntext.SetValue(int64(va))
 				va += uint64(ntext.Size())
-
 				if align := ldr.SymAlign(s); align != 0 {
 					va = uint64(Rnd(int64(va), int64(align)))
 				} else {

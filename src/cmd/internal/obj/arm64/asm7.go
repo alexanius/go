@@ -60,8 +60,8 @@ type ctxt7 struct {
 	}
 }
 
-var (
-	funcAlign = 32
+const (
+	funcAlign = 16
 )
 
 const (

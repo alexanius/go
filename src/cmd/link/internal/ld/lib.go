@@ -377,7 +377,9 @@ func mayberemoveoutfile() {
 }
 
 func libinit(ctxt *Link) {
-	Funcalign = thearch.Funcalign
+	// At this point the linker option is already parsed, can assign its value
+	Funcalign         = *FlagFuncAlign
+	thearch.Funcalign = *FlagFuncAlign
 
 	// add goroot to the end of the libdir list.
 	suffix := ""

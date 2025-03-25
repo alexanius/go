@@ -194,8 +194,8 @@ func (g Goarm64Features) String() string {
 
 func ParseGoarm64(v string) (g Goarm64Features, e error) {
 	const (
-		lseOpt            = ",lse"
-		cryptoOpt         = ",crypto"
+		lseOpt    = ",lse"
+		cryptoOpt = ",crypto"
 	)
 
 	g.LSE = false

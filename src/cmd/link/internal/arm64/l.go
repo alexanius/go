@@ -30,10 +30,6 @@
 
 package arm64
 
-import (
-	"cmd/link/internal/ld"
-)
-
 // Writing object files.
 
 // cmd/9l/l.h from Vita Nuova.
@@ -66,8 +62,9 @@ import (
 // THE SOFTWARE.
 
 const (
-	maxAlign = 32 // max data alignment
-	minAlign = 1  // min data alignment
+	maxAlign  = 32 // max data alignment
+	minAlign  = 1  // min data alignment
+	funcAlign = 16
 )
 
 /* Used by ../internal/ld/dwarf.go */
@@ -75,14 +72,3 @@ const (
 	dwarfRegSP = 31
 	dwarfRegLR = 30
 )
-
-var (
-	funcAlign = 32
-)
-
-func init() {
-	funcAlign = *ld.FlagFuncAlign
-	if funcAlign < minAlign || funcAlign > maxAlign {
-		ld.Exitf("invalid function align %d (-funcalign). Should be in range [%d; %d]", funcAlign, minAlign, maxAlign)
-	}
-}
