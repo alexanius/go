@@ -59,6 +59,11 @@ func isRuntimeDepPkg(pkg string) bool {
 	return objabi.LookupPkgSpecial(pkg).Runtime
 }
 
+const (
+	minFuncAlign = 16
+	maxFuncAlign = 32
+)
+
 // Estimate the max size needed to hold any new trampolines created for this function. This
 // is used to determine when the section can be split if it becomes too large, to ensure that
 // the trampolines are in the same section as the function that uses them.
@@ -2658,9 +2663,7 @@ func assignAddress(ctxt *Link, sect *sym.Section, n int, s loader.Sym, va uint64
 	}
 
 	align := ldr.SymAlign(s)
-	if align == 0 {
-		align = int32(Funcalign)
-	}
+	align = max(align, int32(Funcalign))
 	va = uint64(Rnd(int64(va), int64(align)))
 	if sect.Align < align {
 		sect.Align = align

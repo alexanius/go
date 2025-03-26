@@ -105,6 +105,7 @@ var (
 	FlagStrictDups    = flag.Int("strictdups", 0, "sanity check duplicate symbol contents during object file reading (1=warn 2=err).")
 	FlagRound         = flag.Int64("R", -1, "set address rounding `quantum`")
 	FlagTextAddr      = flag.Int64("T", -1, "set the start address of text symbols")
+	FlagFuncAlign     = flag.Int("funcalign", 16, "set function align to `N` bytes (16 is the default value)")
 	flagEntrySymbol   = flag.String("E", "", "set `entry` symbol name")
 	flagPruneWeakMap  = flag.Bool("pruneweakmap", true, "prune weak mapinit refs")
 	flagRandLayout    = flag.Int64("randlayout", 0, "randomize function layout")
@@ -115,7 +116,6 @@ var (
 	benchmarkFlag     = flag.String("benchmark", "", "set to 'mem' or 'cpu' to enable phase benchmarking")
 	benchmarkFileFlag = flag.String("benchmarkprofile", "", "emit phase profiles to `base`_phase.{cpu,mem}prof")
 
-	FlagFuncAlign     = flag.Int("funcalign", 32, "set function align to `N` bytes (32 is the default value)")
 	flagW ternaryFlag
 	FlagW = new(bool) // the -w flag, computed in main from flagW
 )
@@ -208,6 +208,10 @@ func Main(arch *sys.Arch, theArch Arch) {
 
 	objabi.Flagparse(usage)
 	counter.CountFlags("link/flag:", *flag.CommandLine)
+
+	if *FlagFuncAlign%minFuncAlign != 0 || *FlagFuncAlign > maxFuncAlign {
+		Errorf("invalid -funcalign value %d", *FlagFuncAlign)
+	}
 
 	if ctxt.Debugvlog > 0 {
 		// dump symbol info on crash

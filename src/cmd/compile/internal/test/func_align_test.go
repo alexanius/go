@@ -10,15 +10,14 @@ import (
 	"internal/testenv"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-func buildFuncAlignmentTest(t *testing.T, dir string, env string) {
+func buildFuncAlignmentTest(t *testing.T, dir, align string) {
 	oldEnv := os.Getenv("GOARM64")
-	os.Setenv("GOARM64", env)
+	os.Setenv("GOARM64", "v8.0")
 	defer os.Setenv("GOARM64", oldEnv)
 
 	oldModEnv := os.Getenv("GO111MODULE")
@@ -35,7 +34,7 @@ func buildFuncAlignmentTest(t *testing.T, dir string, env string) {
 			t.Fatalf("Error copying %s: %v", file, err)
 		}
 	}
-	cmd := testenv.Command(t, testenv.GoToolPath(t), "build", "-a", "-o", "m")
+	cmd := testenv.Command(t, testenv.GoToolPath(t), "build", "-a", "-ldflags=-funcalign="+align, "-o", "m")
 	cmd.Dir = dir
 	cmd = testenv.CleanCmdEnv(cmd)
 	t.Log(cmd)
@@ -77,14 +76,10 @@ func testFuncAlignment(t *testing.T, dir string, fname string, func_align int64)
 }
 
 func TestFuncAlign(t *testing.T) {
-	if runtime.GOARCH != "arm64" {
-		t.Skip("Skipping test: not implemented for current arch.")
-	}
-
 	testenv.MustHaveGoRun(t)
 
 	dir := t.TempDir()
-	buildFuncAlignmentTest(t, dir, "v8.0")
+	buildFuncAlignmentTest(t, dir, "16")
 	testFuncAlignment(t, dir, "main.asm_foo", 16)
 	testFuncAlignment(t, dir, "main.asm_bar", 16)
 	testFuncAlignment(t, dir, "main.asm_baz", 16)
@@ -93,7 +88,7 @@ func TestFuncAlign(t *testing.T) {
 	testFuncAlignment(t, dir, "main.baz", 16)
 
 	dir = t.TempDir()
-	buildFuncAlignmentTest(t, dir, "v8.0")
+	buildFuncAlignmentTest(t, dir, "32")
 	testFuncAlignment(t, dir, "main.asm_foo", 32)
 	testFuncAlignment(t, dir, "main.asm_bar", 32)
 	testFuncAlignment(t, dir, "main.asm_baz", 32)

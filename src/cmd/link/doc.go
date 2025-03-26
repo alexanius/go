@@ -84,7 +84,7 @@ Flags:
 	-f
 		Ignore version mismatch in the linked archives.
 	-funcalign N
-		Set function alignment to `N` bytes
+		Set function alignment to `N` bytes (16 is default)
 	-g
 		Disable Go package data checks.
 	-importcfg file
