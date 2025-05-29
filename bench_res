@@ -1,0 +1,20 @@
+Benchmark result
+
+goos: linux
+goarch: arm64
+pkg: runtime
+                               │   base.log   │               new.log               │
+                               │    sec/op    │   sec/op     vs base                │
+Syscall-96                        10.65n ± 0%   10.16n ± 0%  -4.60% (n=100)
+SyscallWork-96                    10.85n ± 0%   10.31n ± 0%  -4.98% (n=100)
+SyscallExcess-96                  10.69n ± 0%   10.17n ± 0%  -4.86% (n=100)
+SyscallExcessWork-96             10.890n ± 0%   9.876n ± 5%  -9.32% (n=100)
+WakeupParallelSyscall/0s-96       143.3µ ± 1%   144.1µ ± 1%       ~ (p=0.341 n=100)
+WakeupParallelSyscall/1µs-96      144.6µ ± 2%   145.0µ ± 1%       ~ (p=0.296 n=100)
+WakeupParallelSyscall/2µs-96      148.1µ ± 1%   146.6µ ± 1%       ~ (p=0.149 n=100)
+WakeupParallelSyscall/5µs-96      152.5µ ± 2%   153.0µ ± 2%       ~ (p=0.286 n=100)
+WakeupParallelSyscall/10µs-96     163.7µ ± 1%   164.3µ ± 1%       ~ (p=0.138 n=100)
+WakeupParallelSyscall/20µs-96     178.0µ ± 3%   180.3µ ± 3%       ~ (p=0.307 n=100)
+WakeupParallelSyscall/50µs-96     241.7µ ± 1%   243.9µ ± 1%       ~ (p=0.078 n=100)
+WakeupParallelSyscall/100µs-96    340.8µ ± 1%   339.8µ ± 1%       ~ (p=0.636 n=100)
+geomean                           7.051µ        6.922µ       -1.84%
