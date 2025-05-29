@@ -12,7 +12,7 @@
 TEXT ·Syscall(SB),NOSPLIT,$0-56
 	B	syscall·Syscall(SB)
 
-TEXT ·Syscall6(SB),NOSPLIT,$0-80
+TEXT ·Syscall6(SB),NOSPLIT,$0-0
 	B	syscall·Syscall6(SB)
 
 TEXT ·SyscallNoError(SB),NOSPLIT,$0-48
