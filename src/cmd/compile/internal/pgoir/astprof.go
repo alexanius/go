@@ -55,7 +55,7 @@ func LoadCounters(fc *pgo.FunctionsCounters) {
 
 			ir.VisitList(f.Body, func(n ir.Node) {
 				if bbDebugPrint {
-					fmt.Println("try back_prop init: ", printOp(n))
+					fmt.Println("load_counters: ", printOp(n))
 				}
 				counter, ok := lc[int64(n.Pos().Line())]
 				if !ok {
@@ -66,7 +66,7 @@ func LoadCounters(fc *pgo.FunctionsCounters) {
 				ir.SetCounter(f, n, counter)
 
 				if bbDebugPrint {
-					fmt.Println("back_prop init: ", printOp(n), " new: ", counter)
+					fmt.Println("load_counters: ", printOp(n), " new: ", counter)
 				}
 			})
 
@@ -120,7 +120,7 @@ func backPropNodeListCounterRec(f *ir.Func, nodes ir.Nodes, depth int, watched m
 			n := nds[i]
 			if !ir.MayBeShared(n) {
 				if bbDebugPrint {
-					fmt.Println("back_prop (list): ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", c)
+					fmt.Println(strings.Repeat(" ", depth), "back_prop (list): ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", c)
 				}
 				ir.SetCounter(f, n, c)
 			}
@@ -180,8 +180,19 @@ func backPropNodeCounterRec(f *ir.Func, n ir.Node, depth int, watched map[ir.Nod
 
 	if n.Op() == ir.OIF {
 		n := n.(*ir.IfStmt)
+		if bbDebugPrint {
+			fmt.Println(strings.Repeat(" ", depth), "back_prop: Start", printOp(n), ".Cond prop")
+		}
 		count, mayReturn = backPropNodeCounterRec(f, n.Cond, depth+1, watched)
+
+		if bbDebugPrint {
+			fmt.Println(strings.Repeat(" ", depth), "back_prop: Start", printOp(n), ".Body prop")
+		}
 		bC, bR := backPropNodeListCounterRec(f, n.Body, depth+1, watched)
+
+		if bbDebugPrint {
+			fmt.Println(strings.Repeat(" ", depth), "back_prop: Start", printOp(n), ".Else prop")
+		}
 		eC, eR := backPropNodeListCounterRec(f, n.Else, depth+1, watched)
 
 		sum := bC + eC
@@ -201,6 +212,13 @@ func backPropNodeCounterRec(f *ir.Func, n ir.Node, depth int, watched map[ir.Nod
 			count = 0
 		}
 		mayReturn = mayReturn || cR || pR
+	} else if n.Op() == ir.OSWITCH {
+		n := n.(*ir.SwitchStmt)
+		for _, cs := range n.Cases {
+			cC, cR := backPropNodeListCounterRec(f, cs.Body, depth+1, watched)
+			mayReturn = mayReturn || cR
+			count += cC
+		}
 	} else if !ir.MayBeShared(n) {
 		v := reflect.ValueOf(n).Elem()
 		t := reflect.TypeOf(n).Elem()
@@ -243,7 +261,7 @@ func backPropNodeCounterRec(f *ir.Func, n ir.Node, depth int, watched map[ir.Nod
 
 	count = max(count, ir.GetCounter(f, n))
 	if bbDebugPrint {
-		fmt.Println("back_prop: ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", count)
+		fmt.Println(strings.Repeat(" ", depth), "back_prop: ", printOp(n), " old: ", ir.GetCounter(f, n), " new: ", count)
 	}
 	ir.SetCounter(f, n, count)
 
@@ -356,6 +374,11 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 		if n.Post != nil {
 			forwardPropNodeCounterRec(f, n.Post, c, depth+1, watched)
 		}
+	} else if n.Op() == ir.OSWITCH {
+		n := n.(*ir.SwitchStmt)
+		for _, cs := range n.Cases {
+			forwardPropNodeListCounterRec(f, cs.Body, depth+1, watched)
+		}
 	} else if !ir.MayBeShared(n) {
 		v := reflect.ValueOf(n).Elem()
 		t := reflect.TypeOf(n).Elem()
@@ -390,8 +413,8 @@ func forwardPropNodeCounterRec(f *ir.Func, n ir.Node, c int64, depth int, watche
 // getInlCounter get counter of inlined node
 // We use two profile tables: one from preprofile, and another that
 // belongs to function body. The second variant is more precise, as its
-// counters are propagates with algorithm. But not all inlined functions
-// has aviable body. In this case we use preprofile data. The preprofile
+// counters are propagated with algorithm. But not all inlined functions'
+// body is aviable. In this case we use preprofile data. The preprofile
 // data does not contain results of propagation, but it is better than nothing
 // TODO: The good solution of this problem will be adding pgobb information to
 // export data
@@ -466,9 +489,11 @@ func inlineCorrectionNodeListCounterRec(fc *pgo.FunctionsCounters, lc *pgo.Lines
 		if n.Op() == ir.OINLMARK {
 			n := n.(*ir.InlineMarkStmt)
 
-			inlCount = ir.GetCounter(f, n)
-			if inlCount == 0 && inlF != nil {
-				inlCount, _ = getInlCounter(inlF, lc, n)
+			if inlCount != 0 {
+				inlCount = ir.GetCounter(f, n)
+				if /*inlCount == 0 &&*/ inlF != nil {
+					inlCount, _ = getInlCounter(inlF, lc, n)
+				}
 			}
 
 			if bbDebugPrint {
@@ -491,7 +516,7 @@ func inlineCorrectionNodeListCounterRec(fc *pgo.FunctionsCounters, lc *pgo.Lines
 			hadInl = true
 
 			if bbDebugPrint {
-				fmt.Println("inline_correction: found INLMARK:", n.Index, printOp(n), " for function: ", name, "with counter: ", inlCount, n.Pos().FileIndex(), n.Pos().Line())
+				fmt.Println("inline_correction: found INLMARK:", n.Index, printOp(n), " for function:", name, "with counter:", inlCount, "pos:", n.Pos().FileIndex(), n.Pos().Line())
 				if inlF != nil {
 					fmt.Println("inline_correction: Currently in the inlined part of", ir.PkgFuncName(inlF))
 				}
@@ -537,7 +562,16 @@ func CorrectProfileAfterInline(fc *pgo.FunctionsCounters, f *ir.Func, fns []*ir.
 		bbDebugPrint = true
 	}
 
-	inlineCorrectionNodeListCounterRec(fc, nil, f, nil, f.Body, 0, 0, fns)
+	var funcCount ir.Counter
+	if f.ProfTable != nil {
+		f.ProfTable.Range(func(key, value any) bool {
+			if value.(ir.Counter) > 0 {
+				funcCount = value.(ir.Counter)
+			}
+			return true
+		})
+	}
+	inlineCorrectionNodeListCounterRec(fc, nil, f, nil, f.Body, 0, funcCount, fns)
 
 	if bbDebugPrint {
 		fmt.Printf("Finish pgobb debug  on pass 'after_inline' for: '%s'\n", ir.LinkFuncName(f))
